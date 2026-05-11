@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sign } from 'jsonwebtoken'
 import { verifyPassword } from '@/lib/password'
-import { getEnv } from '@/lib/env'
+import { getAuthEnv } from '@/lib/env'
 import { checkRateLimit } from '@/lib/rate-limit-helper'
 
 // OWASP: Never use hardcoded secrets - always use environment variables
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get validated environment configuration (lazy load)
-    const env = getEnv()
+    const env = getAuthEnv()
     
     const { username, password } = await request.json()
 

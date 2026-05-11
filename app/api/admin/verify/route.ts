@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jsonwebtoken'
-import { getEnv } from '@/lib/env'
+import { getAuthEnv } from '@/lib/env'
 
 // OWASP: Use secure JWT secret from environment
 
 export async function GET(request: NextRequest) {
   try {
     // Get validated environment configuration (lazy load)
-    const env = getEnv()
+    const env = getAuthEnv()
     
     const authHeader = request.headers.get('authorization')
     

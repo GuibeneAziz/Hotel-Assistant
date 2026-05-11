@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: true,
+  experimental: {
+    // Tree-shake only the icons/components actually imported — cuts bundle size
+    optimizePackageImports: ['lucide-react', 'framer-motion', 'recharts'],
+  },
   images: {
     remotePatterns: [
       {
@@ -15,8 +20,8 @@ const nextConfig = {
         pathname: '/**',
       },
     ],
-    formats: ['image/webp'],
-    minimumCacheTTL: 60,
+    formats: ['image/webp', 'image/avif'],
+    minimumCacheTTL: 3600,
   },
 }
 

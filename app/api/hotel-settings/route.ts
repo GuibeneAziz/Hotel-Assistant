@@ -1,56 +1,165 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCached, setCache, deleteCachePattern } from '@/lib/redis'
 import type { ApiResponse } from '@/types/api'
-import { getAllHotelSettings } from '@/lib/db'
+import { getAllHotelSettings, invalidateHotelSettingsCache } from '@/lib/db'
+import pool from '@/lib/db'
+import { verify } from 'jsonwebtoken'
+import { getEnv } from '@/lib/env'
 
 const CACHE_KEY = 'hotel:settings:all'
 const CACHE_TTL = 3600 // 1 hour
 
-// GET - Load hotel settings from PostgreSQL
-export async function GET() {
+// Verify JWT from Authorization header
+function verifyAdminToken(request: NextRequest): boolean {
   try {
-    // Skip cache in development or if cache is stale
-    const skipCache = process.env.NODE_ENV === 'development'
-    
-    if (!skipCache) {
-      // Check cache first
-      const cached = await getCached(CACHE_KEY)
-      if (cached) {
-        return NextResponse.json<ApiResponse>({
-          success: true,
-          data: cached
-        })
-      }
-    }
-
-    // Get settings from database
-    const settings = await getAllHotelSettings()
-    
-    // Cache the result
-    await setCache(CACHE_KEY, settings, CACHE_TTL)
-    
-    return NextResponse.json<ApiResponse>({
-      success: true,
-      data: settings
+    const env = getEnv()
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader?.startsWith('Bearer ')) return false
+    const token = authHeader.substring(7)
+    verify(token, env.JWT_SECRET, {
+      issuer: 'tunisia-hotel-assistant',
+      audience: 'tunisia-hotel-api'
     })
-  } catch (error: any) {
-    console.error('Error loading hotel settings:', error)
-    return NextResponse.json<ApiResponse>({
-      success: false,
-      error: 'Failed to load settings',
-      message: error.message
-    }, { status: 500 })
+    return true
+  } catch {
+    return false
   }
 }
 
-// POST - Save hotel settings (disabled - use database admin tools)
+// GET - Load hotel settings from PostgreSQL
+export async function GET() {
+  try {
+    const skipCache = process.env.NODE_ENV === 'development'
+
+    if (!skipCache) {
+      const cached = await getCached(CACHE_KEY)
+      if (cached) {
+        return NextResponse.json<ApiResponse>({ success: true, data: cached })
+      }
+    }
+
+    const settings = await getAllHotelSettings()
+    await setCache(CACHE_KEY, settings, CACHE_TTL)
+
+    return NextResponse.json<ApiResponse>({ success: true, data: settings })
+  } catch (error: any) {
+    console.error('Error loading hotel settings:', error)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: 'Failed to load settings', message: error.message },
+      { status: 500 }
+    )
+  }
+}
+
+// POST - Save hotel settings to database (JWT protected)
 export async function POST(request: NextRequest) {
-  return NextResponse.json<ApiResponse>(
-    {
-      success: false,
-      error: 'Direct settings modification is disabled',
-      message: 'Please use database admin tools to modify hotel settings'
-    },
-    { status: 403 }
-  )
+  // Require valid admin JWT
+  if (!verifyAdminToken(request)) {
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: 'Unauthorized' },
+      { status: 401 }
+    )
+  }
+
+  try {
+    const body = await request.json()
+    const { hotelId, settings } = body
+
+    if (!hotelId || !settings) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: 'Missing required fields', message: 'hotelId and settings are required' },
+        { status: 400 }
+      )
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // Update restaurant facilities
+      if (settings.restaurant) {
+        for (const [mealType, mealData] of Object.entries(settings.restaurant)) {
+          const meal = mealData as { available: boolean; start: string; end: string }
+          await client.query(`
+            UPDATE facilities
+            SET is_available = $1, open_time = $2, close_time = $3
+            WHERE hotel_id = $4 AND facility_type = 'restaurant' AND facility_name = $5
+          `, [meal.available, meal.start, meal.end, hotelId, mealType])
+        }
+      }
+
+      // Update spa
+      if (settings.spa) {
+        await client.query(`
+          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
+          WHERE hotel_id = $4 AND facility_type = 'spa'
+        `, [settings.spa.available, settings.spa.openTime, settings.spa.closeTime, hotelId])
+      }
+
+      // Update pool
+      if (settings.pool) {
+        await client.query(`
+          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
+          WHERE hotel_id = $4 AND facility_type = 'pool'
+        `, [settings.pool.available, settings.pool.openTime, settings.pool.closeTime, hotelId])
+      }
+
+      // Update gym
+      if (settings.gym) {
+        await client.query(`
+          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
+          WHERE hotel_id = $4 AND facility_type = 'gym'
+        `, [settings.gym.available, settings.gym.openTime, settings.gym.closeTime, hotelId])
+      }
+
+      // Update kids club
+      if (settings.kidsClub) {
+        await client.query(`
+          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
+          WHERE hotel_id = $4 AND facility_type = 'kids_club'
+        `, [settings.kidsClub.available, settings.kidsClub.openTime, settings.kidsClub.closeTime, hotelId])
+      }
+
+      // Sync special events: delete all then re-insert
+      if (settings.specialEvents !== undefined) {
+        await client.query('DELETE FROM special_events WHERE hotel_id = $1', [hotelId])
+        for (const event of settings.specialEvents) {
+          if (!event.title || !event.date) continue
+          await client.query(`
+            INSERT INTO special_events (hotel_id, title, description, event_date, event_time, location, price, image_url, requires_reservation)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `, [
+            hotelId,
+            event.title,
+            event.description || null,
+            event.date,
+            event.time || '00:00',
+            event.location || null,
+            event.price || null,
+            event.imageUrl || null,
+            event.requiresReservation ?? false
+          ])
+        }
+      }
+
+      await client.query('COMMIT')
+
+      // Clear Redis cache and in-process cache so next GET returns fresh data
+      await deleteCachePattern('hotel:*')
+      invalidateHotelSettingsCache()
+
+      return NextResponse.json<ApiResponse>({ success: true, message: 'Hotel settings updated successfully' })
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  } catch (error: any) {
+    console.error('Error updating hotel settings:', error)
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: 'Failed to update settings', message: error.message },
+      { status: 500 }
+    )
+  }
 }

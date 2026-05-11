@@ -8,11 +8,13 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        'tunisia-blue': '#1e40af',
+        'tunisia-blue': '#2563eb',
         'tunisia-gold': '#f59e0b',
-        'tunisia-red': '#dc2626',
+        'tunisia-red': '#ef4444',
         'glass': 'rgba(255, 255, 255, 0.1)',
         'glass-dark': 'rgba(0, 0, 0, 0.1)',
+        'primary': { DEFAULT: '#2563eb', light: '#3b82f6', dark: '#1d4ed8' },
+        'accent': { DEFAULT: '#06b6d4', light: '#22d3ee' },
       },
       fontFamily: {
         'arabic': ['Noto Sans Arabic', 'sans-serif'],

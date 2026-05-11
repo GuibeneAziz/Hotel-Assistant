@@ -11,6 +11,7 @@ import {
   createOrUpdateGuestProfile
 } from '@/lib/analytics'
 import { checkRateLimit } from '@/lib/rate-limit-helper'
+import { getAllHotelSettings } from '@/lib/db'
 
 export async function POST(request: Request) {
   try {
@@ -38,8 +39,23 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    const { message, hotelSettings, hotelData, weather, conversationHistory, sessionId } = validation.data!
+    const { message, hotelData, weather, conversationHistory, sessionId } = validation.data!
     console.log('✅ Validation passed, message length:', message.length)
+
+    // Load hotel settings from database
+    let hotelSettings: any = null
+    try {
+      const allHotelSettings = await getAllHotelSettings()
+      const hotelId = hotelData?.id || Object.keys(allHotelSettings)[0]
+      hotelSettings = allHotelSettings[hotelId] || null
+    } catch (dbError: any) {
+      console.error('Failed to load hotel settings from DB:', dbError.message)
+      // Continue without hotel settings - AI will have limited context
+    }
+
+    if (!hotelSettings) {
+      console.warn('⚠️ No hotel settings found, using minimal context')
+    }
 
     // Get guest profile for analytics (if available)
     let guestProfile = null
@@ -74,57 +90,56 @@ export async function POST(request: Request) {
       })
     }
 
-    // Build complete hotel knowledge base (personalized if guest profile available)
+    // Build hotel knowledge base
     console.log('🏨 Building hotel knowledge...')
     let fullKnowledge: string
-    
-    if (guestProfile && guestProfile.hotel_id) {
-      // Build personalized knowledge with tailored attractions
-      const guestProfileData = {
-        ageRange: guestProfile.age_range as any,
-        groupType: guestProfile.group_type as any,
-        travelPurpose: guestProfile.travel_purpose as any
+    try {
+      if (guestProfile && guestProfile.hotel_id && hotelSettings) {
+        const guestProfileData = {
+          ageRange: guestProfile.age_range as any,
+          groupType: guestProfile.group_type as any,
+          travelPurpose: guestProfile.travel_purpose as any
+        }
+        fullKnowledge = await buildPersonalizedHotelKnowledge(
+          hotelSettings, hotelData, weather, guestProfileData, guestProfile.hotel_id
+        )
+      } else {
+        fullKnowledge = buildHotelKnowledge(hotelSettings, hotelData, weather)
       }
-      
-      fullKnowledge = await buildPersonalizedHotelKnowledge(
-        hotelSettings,
-        hotelData,
-        weather,
-        guestProfileData,
-        guestProfile.hotel_id
-      )
-      console.log('🎯 Personalized knowledge built for guest profile')
-    } else {
-      // Build standard knowledge
+    } catch (knowledgeError: any) {
+      console.error('Knowledge build error (non-blocking):', knowledgeError.message)
       fullKnowledge = buildHotelKnowledge(hotelSettings, hotelData, weather)
-      console.log('📚 Standard knowledge built')
     }
-    
     console.log('📚 Knowledge built, length:', fullKnowledge.length)
     
-    // Extract relevant context for efficiency (optional optimization)
+    // Extract relevant context, but fall back to full knowledge when the slice is too thin.
     const relevantContext = extractRelevantContext(message, fullKnowledge)
     console.log('🎯 Relevant context extracted, length:', relevantContext.length)
+    const contextForModel = relevantContext.trim().length >= 250 ? relevantContext : fullKnowledge
+    console.log('🛡️ Context sent to model, length:', contextForModel.length)
 
     // Generate AI response with context
     console.log('🤖 Calling AI service...')
     const aiResponse = await generateResponse(
       message,
-      relevantContext,
+      contextForModel,
       conversationHistory || []
     )
     console.log('✅ AI response generated, length:', aiResponse.length)
 
+    // Append event images if the response mentions an event that has a photo
+    const finalResponse = appendEventImages(aiResponse, hotelSettings?.specialEvents || [])
+
     return NextResponse.json<ChatResponse>({ 
       success: true,
-      response: aiResponse
+      response: finalResponse
     })
     
   } catch (error: any) {
     console.error('Chat API Error:', {
       message: error.message,
-      // Don't log stack traces in production
-      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+      stack: error.stack,
+      name: error.name
     })
     
     // OWASP: Sanitize error messages - don't expose internal details
@@ -185,4 +200,19 @@ export async function GET() {
       { status: 500 }
     )
   }
+}
+
+// Append [IMAGE:url] tags for events mentioned in the AI response that have photos
+function appendEventImages(response: string, events: any[]): string {
+  const eventsWithImages = events.filter((e: any) => e.imageUrl)
+  if (eventsWithImages.length === 0) return response
+  const responseLower = response.toLowerCase()
+  const imageTags: string[] = []
+  for (const event of eventsWithImages) {
+    const titleWords = event.title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
+    if (titleWords.some((word: string) => responseLower.includes(word))) {
+      imageTags.push(`[IMAGE:${event.imageUrl}]`)
+    }
+  }
+  return imageTags.length > 0 ? response + '\n' + imageTags.join('\n') : response
 }

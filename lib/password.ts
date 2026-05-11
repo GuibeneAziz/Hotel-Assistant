@@ -1,7 +1,7 @@
 // Password Security Utility
 // OWASP: Use strong password hashing (bcrypt with 12+ salt rounds)
 
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
 const SALT_ROUNDS = 12
 

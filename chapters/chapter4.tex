@@ -1,0 +1,64 @@
+\chapter{Implementation du chatbot intelligent (RAG)}
+
+\section{Introduction}
+Ce chapitre presente l'implementation de la composante IA, coeur de la solution proposee.
+
+\section{Architecture conversationnelle}
+Le chatbot repose sur une approche RAG qui combine :
+\begin{itemize}
+  \item un modele de langage pour la generation ;
+  \item une base de connaissances contextuelle par hotel ;
+  \item une memoire de session pour la continuite des echanges.
+\end{itemize}
+
+\section{Pipeline de traitement d'un message}
+\begin{enumerate}
+  \item validation et nettoyage de l'entree utilisateur ;
+  \item verification des limites d'usage (rate limiting) ;
+  \item chargement du contexte hotelier et de l'historique ;
+  \item construction du prompt ;
+  \item appel LLM et retour de la reponse (JSON ou streaming SSE) ;
+  \item enregistrement d'evenements analytiques.
+\end{enumerate}
+
+\section{Multilinguisme et personnalisation}
+La plateforme prend en charge plusieurs langues afin d'ameliorer l'accessibilite internationale. Les reponses sont adaptees au contexte hotelier et au profil utilisateur.
+
+\section{Exemple de logique de traitement}
+\begin{lstlisting}[caption={Pseudo-flux de traitement d'une requete chat}]
+1) Validate input
+2) Apply rate-limit
+3) Load hotel settings + session context
+4) Build RAG prompt
+5) Query model
+6) Stream/return answer
+7) Track analytics event
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    node distance=1.0cm and 0.8cm,
+    box/.style={rectangle,draw,rounded corners,align=center,minimum width=2.4cm,minimum height=0.8cm},
+    >={Latex}
+  ]
+    \node[box] (u) {Utilisateur};
+    \node[box,right=of u] (api) {API Chat};
+    \node[box,right=of api] (val) {Validation\\+ Rate Limit};
+    \node[box,right=of val] (ctx) {Contexte RAG\\(Hotel + Session)};
+    \node[box,right=of ctx] (model) {LLM Groq};
+    \node[box,below=of ctx] (track) {Tracking\\Analytics};
+
+    \draw[->] (u) -- node[above]{message} (api);
+    \draw[->] (api) -- (val);
+    \draw[->] (val) -- (ctx);
+    \draw[->] (ctx) -- (model);
+    \draw[->] (model) -- node[above]{reponse} (api);
+    \draw[->] (api) -- node[above]{SSE/JSON} (u);
+    \draw[->] (api) -- (track);
+  \end{tikzpicture}
+  \caption{Diagramme de sequence simplifie du traitement d'un message chatbot}
+\end{figure}
+
+\section{Conclusion}
+L'integration du chatbot RAG apporte une assistance intelligente et contextualisee. Le chapitre suivant aborde les modules analytics et administration.

@@ -1,13 +1,74 @@
 // RAG Knowledge Base Builder
 // Converts hotel data into structured knowledge for AI
 
-import { getPersonalizedAttractions, parseWeatherConditions, type GuestProfile } from './personalized-attractions'
+import { buildClusteredAttractionsContext, parseWeatherConditions, type ClusteringGuestProfile, type ClusteringWeather } from './attraction-clustering'
+
+function formatDateOnly(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function normalizeKnowledgeDate(value: unknown): string | null {
+  if (!value) {
+    return null
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    const isoDateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (isoDateMatch) {
+      return isoDateMatch[1]
+    }
+
+    const parsed = new Date(trimmed)
+    return Number.isNaN(parsed.getTime()) ? null : formatDateOnly(parsed)
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : formatDateOnly(value)
+  }
+
+  return null
+}
+
+function isDateOrEventQuery(queryLower: string): boolean {
+  return /\b(event|events|today|tomorrow|tonight|weekend|week|date|calendar|schedule|when|happening|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(queryLower)
+    || /\b\d{4}-\d{2}-\d{2}\b/.test(queryLower)
+    || /\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/.test(queryLower)
+}
+
+function splitKnowledgeSections(fullKnowledge: string): Array<{ header: string; lines: string[] }> {
+  const sections: Array<{ header: string; lines: string[] }> = []
+  let currentSection: { header: string; lines: string[] } | null = null
+
+  for (const line of fullKnowledge.split('\n')) {
+    if (line.startsWith('===')) {
+      if (currentSection) sections.push(currentSection)
+      currentSection = { header: line, lines: [line] }
+      continue
+    }
+
+    if (!currentSection) {
+      currentSection = { header: '', lines: [] }
+    }
+
+    currentSection.lines.push(line)
+  }
+
+  if (currentSection) {
+    sections.push(currentSection)
+  }
+
+  return sections
+}
 
 export function buildHotelKnowledge(
   hotelSettings: any,
   hotelData: any,
   weather: any,
-  guestProfile?: GuestProfile
+  guestProfile?: ClusteringGuestProfile
 ): string {
   const knowledge: string[] = []
 
@@ -111,10 +172,14 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
   // Special Events
   knowledge.push(`=== SPECIAL EVENTS ===`)
   if (hotelSettings?.specialEvents?.length > 0) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = formatDateOnly(new Date())
+    const normalizedEvents = hotelSettings.specialEvents.map((event: any) => ({
+      ...event,
+      normalizedDate: normalizeKnowledgeDate(event.date),
+    }))
     
     // Today's events
-    const todayEvents = hotelSettings.specialEvents.filter((e: any) => e.date === today)
+    const todayEvents = normalizedEvents.filter((event: any) => event.normalizedDate === today)
     if (todayEvents.length > 0) {
       knowledge.push(`TODAY'S EVENTS:`)
       todayEvents.forEach((event: any) => {
@@ -129,16 +194,36 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
     }
     
     // Upcoming events
-    const upcomingEvents = hotelSettings.specialEvents
-      .filter((e: any) => e.date > today)
+    const upcomingEvents = normalizedEvents
+      .filter((event: any) => event.normalizedDate && event.normalizedDate > today)
       .slice(0, 5)
     
     if (upcomingEvents.length > 0) {
       knowledge.push(`UPCOMING EVENTS:`)
       upcomingEvents.forEach((event: any) => {
-        knowledge.push(`  - ${event.title} on ${event.date}`)
+        knowledge.push(`  - ${event.title} on ${event.normalizedDate}`)
         knowledge.push(`    Time: ${event.time}, Location: ${event.location}`)
         knowledge.push(`    Price: ${event.price || 'Free'}`)
+        if (event.description) {
+          knowledge.push(`    Details: ${event.description}`)
+        }
+      })
+    }
+
+    if (todayEvents.length === 0 && upcomingEvents.length === 0) {
+      knowledge.push(`ALL SCHEDULED EVENTS:`)
+      normalizedEvents.slice(0, 5).forEach((event: any) => {
+        knowledge.push(`  - ${event.title}${event.normalizedDate ? ` on ${event.normalizedDate}` : ''}`)
+        if (event.time) {
+          knowledge.push(`    Time: ${event.time}`)
+        }
+        if (event.location) {
+          knowledge.push(`    Location: ${event.location}`)
+        }
+        knowledge.push(`    Price: ${event.price || 'Free'}`)
+        if (event.description) {
+          knowledge.push(`    Details: ${event.description}`)
+        }
       })
     }
   } else {
@@ -212,13 +297,6 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
         if (attraction.transportation) {
           knowledge.push(`    Transportation: ${attraction.transportation}`)
         }
-        if (attraction.requires_booking && attraction.booking_contact) {
-          knowledge.push(`    Booking Required: ${attraction.booking_contact}`)
-        }
-        if (attraction.special_notes) {
-          knowledge.push(`    Note: ${attraction.special_notes}`)
-        }
-        
         // Add personalization info if available
         if (attraction.match_score !== undefined) {
           knowledge.push(`    Recommended for your travel style (${attraction.match_score}% match)`)
@@ -306,24 +384,25 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
 // Helper function to extract relevant context based on query
 export function extractRelevantContext(query: string, fullKnowledge: string): string {
   const queryLower = query.toLowerCase()
-  const lines = fullKnowledge.split('\n')
   
   // Keywords to section mapping
   const keywords: { [key: string]: string[] } = {
-    'pool': ['FACILITIES', 'pool'],
-    'gym': ['FACILITIES', 'gym', 'fitness'],
-    'spa': ['FACILITIES', 'spa'],
-    'restaurant': ['RESTAURANT'],
-    'breakfast': ['RESTAURANT', 'breakfast'],
-    'lunch': ['RESTAURANT', 'lunch'],
-    'dinner': ['RESTAURANT', 'dinner'],
+    'pool': ['FACILITIES'],
+    'gym': ['FACILITIES'],
+    'fitness': ['FACILITIES'],
+    'spa': ['FACILITIES'],
+    'restaurant': ['RESTAURANT SCHEDULE'],
+    'breakfast': ['RESTAURANT SCHEDULE'],
+    'lunch': ['RESTAURANT SCHEDULE'],
+    'dinner': ['RESTAURANT SCHEDULE'],
     'event': ['SPECIAL EVENTS'],
+    'events': ['SPECIAL EVENTS'],
     'activity': ['ACTIVITIES', 'HOTEL ACTIVITIES', 'NEARBY ATTRACTIONS'],
     'activities': ['ACTIVITIES', 'HOTEL ACTIVITIES', 'NEARBY ATTRACTIONS'],
     'nearby': ['NEARBY ATTRACTIONS'],
     'attraction': ['NEARBY ATTRACTIONS'],
     'attractions': ['NEARBY ATTRACTIONS'],
-    'things to do': ['ACTIVITIES', 'HOTEL ACTIVITIES', 'NEARBY ATTRACTIONS'],
+    'things to do': ['HOTEL ACTIVITIES', 'NEARBY ATTRACTIONS'],
     'visit': ['NEARBY ATTRACTIONS'],
     'see': ['NEARBY ATTRACTIONS'],
     'explore': ['NEARBY ATTRACTIONS'],
@@ -331,69 +410,97 @@ export function extractRelevantContext(query: string, fullKnowledge: string): st
     'around': ['NEARBY ATTRACTIONS'],
     'area': ['NEARBY ATTRACTIONS'],
     'local': ['NEARBY ATTRACTIONS'],
-    'wifi': ['AMENITIES', 'wifi'],
-    'parking': ['AMENITIES', 'parking'],
+    'wifi': ['AMENITIES'],
+    'parking': ['AMENITIES'],
     'check': ['CHECK-IN/CHECK-OUT'],
-    'contact': ['CONTACT'],
-    'weather': ['WEATHER'],
+    'contact': ['CONTACT INFORMATION'],
+    'weather': ['CURRENT WEATHER'],
   }
   
   // Find relevant sections
-  const relevantSections = new Set<string>()
+  const relevantHeaders = new Set<string>()
   for (const [keyword, sections] of Object.entries(keywords)) {
     if (queryLower.includes(keyword)) {
-      sections.forEach(section => relevantSections.add(section))
+      sections.forEach((section) => relevantHeaders.add(section))
     }
+  }
+
+  if (isDateOrEventQuery(queryLower)) {
+    relevantHeaders.add('SPECIAL EVENTS')
   }
   
   // If no specific keywords, return full knowledge
-  if (relevantSections.size === 0) {
+  if (relevantHeaders.size === 0) {
     return fullKnowledge
   }
   
-  // Extract relevant sections
-  const relevantLines: string[] = []
-  let inRelevantSection = false
-  
-  for (const line of lines) {
-    if (line.startsWith('===')) {
-      inRelevantSection = Array.from(relevantSections).some(section => 
-        line.includes(section)
-      )
-    }
-    
-    if (inRelevantSection || line.startsWith('===') || line.includes('HOTEL INFORMATION')) {
-      relevantLines.push(line)
-    }
+  const essentialHeaders = ['CONTACT INFORMATION', 'HOTEL INFORMATION']
+  const relevantSections = splitKnowledgeSections(fullKnowledge).filter((section) => {
+    const header = section.header.replace(/=/g, '').trim()
+    return essentialHeaders.some((essentialHeader) => header.includes(essentialHeader))
+      || Array.from(relevantHeaders).some((relevantHeader) => header.includes(relevantHeader))
+  })
+
+  const relevantContext = relevantSections
+    .map((section) => section.lines.join('\n').trimEnd())
+    .filter(Boolean)
+    .join('\n\n')
+
+  if (isDateOrEventQuery(queryLower) && !relevantContext.includes('=== SPECIAL EVENTS ===')) {
+    return fullKnowledge
   }
   
-  return relevantLines.length > 0 ? relevantLines.join('\n') : fullKnowledge
+  return relevantContext || fullKnowledge
 }
 
 /**
- * Build personalized hotel knowledge with attractions tailored to guest profile and weather
+ * Build personalized hotel knowledge using K-Means Prototype Clustering.
+ *
+ * The guest profile is encoded into a 3-D feature vector and assigned to the
+ * nearest cluster centroid (one of 5 travel personas). Attractions are then
+ * scored by category affinity weights defined for that cluster, adjusted by a
+ * weather modifier and a distance penalty. Only the top-ranked results are
+ * injected into the LLM context, preventing the AI from listing everything.
  */
 export async function buildPersonalizedHotelKnowledge(
   hotelSettings: any,
   hotelData: any,
   weather: any,
-  guestProfile: GuestProfile,
+  guestProfile: ClusteringGuestProfile,
   hotelId: string
 ): Promise<string> {
-  // Get personalized attractions
-  const weatherConditions = parseWeatherConditions(weather)
-  const personalizedAttractions = await getPersonalizedAttractions(
-    hotelId,
-    guestProfile,
-    weatherConditions,
-    10 // Limit to top 10 recommendations
+  const clusteringWeather: ClusteringWeather = parseWeatherConditions(weather)
+
+  // Build the full knowledge string (with raw attractions dumped by default)
+  const fullKnowledge = buildHotelKnowledge(
+    { ...hotelSettings, nearbyAttractions: [] }, // pass empty so we control the section
+    hotelData,
+    weather,
+    guestProfile
   )
-  
-  // Replace the nearbyAttractions in hotelSettings with personalized ones
-  const enhancedHotelSettings = {
-    ...hotelSettings,
-    nearbyAttractions: personalizedAttractions
+
+  // Build the clustered attractions block — all ranked, top 3 highlighted
+  const attractionsContext = buildClusteredAttractionsContext(
+    hotelSettings?.nearbyAttractions ?? [],
+    guestProfile,
+    clusteringWeather,
+    3
+  )
+
+  // Replace the empty "No nearby attractions" placeholder with the clustering block.
+  // The placeholder is always present because we passed nearbyAttractions: [].
+  const PLACEHOLDER = `=== NEARBY ATTRACTIONS ===\nNo nearby attractions are currently available in our database.\nPlease contact the front desk for information about local attractions and activities.\n`
+  if (fullKnowledge.includes('=== NEARBY ATTRACTIONS ===')) {
+    // Split at the attractions header and replace that section
+    const parts = fullKnowledge.split('=== NEARBY ATTRACTIONS ===')
+    // parts[0] = everything before, parts[1] = everything after (including next sections)
+    // Find where the next section starts in parts[1]
+    const afterAttractions = parts[1] ?? ''
+    const nextSectionIdx = afterAttractions.indexOf('===')
+    const suffix = nextSectionIdx >= 0 ? afterAttractions.slice(nextSectionIdx) : ''
+    return parts[0] + attractionsContext + '\n' + suffix
   }
-  
-  return buildHotelKnowledge(enhancedHotelSettings, hotelData, weather, guestProfile)
+
+  // Fallback: append clustering block at the end
+  return fullKnowledge.replace(PLACEHOLDER, '') + '\n' + attractionsContext
 }

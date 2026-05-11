@@ -1,0 +1,54 @@
+\babel@toc {french}{}\relax 
+\contentsline {chapter}{Dedicaces}{i}{chapter*.1}%
+\contentsline {chapter}{Remerciements}{ii}{chapter*.2}%
+\contentsline {chapter}{Resume}{iii}{chapter*.3}%
+\contentsline {chapter}{Abstract}{iv}{chapter*.4}%
+\contentsline {chapter}{Liste des abreviations}{v}{chapter*.5}%
+\contentsline {chapter}{Introduction generale}{1}{chapter*.9}%
+\contentsline {chapter}{\numberline {1}Contexte general du projet}{2}{chapter.1}%
+\contentsline {section}{\numberline {1.1}Introduction}{2}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Presentation de l'organisme d'accueil}{2}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Contexte du domaine}{2}{section.1.3}%
+\contentsline {section}{\numberline {1.4}Analyse de l'existant}{2}{section.1.4}%
+\contentsline {subsection}{\numberline {1.4.1}Etude de l'existant}{2}{subsection.1.4.1}%
+\contentsline {subsection}{\numberline {1.4.2}Problematique}{2}{subsection.1.4.2}%
+\contentsline {subsection}{\numberline {1.4.3}Solution proposee}{3}{subsection.1.4.3}%
+\contentsline {section}{\numberline {1.5}Methodologie et planification}{3}{section.1.5}%
+\contentsline {section}{\numberline {1.6}Conclusion}{3}{section.1.6}%
+\contentsline {chapter}{\numberline {2}Analyse des besoins et architecture du systeme}{4}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Introduction}{4}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Identification des acteurs}{4}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Besoins fonctionnels}{4}{section.2.3}%
+\contentsline {section}{\numberline {2.4}Besoins non fonctionnels}{4}{section.2.4}%
+\contentsline {section}{\numberline {2.5}Architecture generale}{5}{section.2.5}%
+\contentsline {section}{\numberline {2.6}Technologies adoptees}{5}{section.2.6}%
+\contentsline {section}{\numberline {2.7}Conclusion}{6}{section.2.7}%
+\contentsline {chapter}{\numberline {3}Conception et modelisation}{7}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Introduction}{7}{section.3.1}%
+\contentsline {section}{\numberline {3.2}Conception fonctionnelle}{7}{section.3.2}%
+\contentsline {section}{\numberline {3.3}Modelisation de la base de donnees}{7}{section.3.3}%
+\contentsline {section}{\numberline {3.4}Conception des interfaces}{7}{section.3.4}%
+\contentsline {section}{\numberline {3.5}Flux de donnees}{8}{section.3.5}%
+\contentsline {section}{\numberline {3.6}Conclusion}{8}{section.3.6}%
+\contentsline {chapter}{\numberline {4}Implementation du chatbot intelligent (RAG)}{9}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Introduction}{9}{section.4.1}%
+\contentsline {section}{\numberline {4.2}Architecture conversationnelle}{9}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Pipeline de traitement d'un message}{9}{section.4.3}%
+\contentsline {section}{\numberline {4.4}Multilinguisme et personnalisation}{10}{section.4.4}%
+\contentsline {section}{\numberline {4.5}Exemple de logique de traitement}{10}{section.4.5}%
+\contentsline {section}{\numberline {4.6}Conclusion}{10}{section.4.6}%
+\contentsline {chapter}{\numberline {5}Module analytics et espace administrateur}{11}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Introduction}{11}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Collecte des evenements analytics}{11}{section.5.2}%
+\contentsline {section}{\numberline {5.3}KPI et visualisations}{11}{section.5.3}%
+\contentsline {section}{\numberline {5.4}Gestion administrative}{11}{section.5.4}%
+\contentsline {section}{\numberline {5.5}Authentification et controle d'acces}{12}{section.5.5}%
+\contentsline {section}{\numberline {5.6}Conclusion}{12}{section.5.6}%
+\contentsline {chapter}{\numberline {6}Securite, tests et deploiement}{13}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Introduction}{13}{section.6.1}%
+\contentsline {section}{\numberline {6.2}Securite applicative}{13}{section.6.2}%
+\contentsline {section}{\numberline {6.3}Performance et scalabilite}{13}{section.6.3}%
+\contentsline {section}{\numberline {6.4}Strategie de tests}{13}{section.6.4}%
+\contentsline {section}{\numberline {6.5}Deploiement}{14}{section.6.5}%
+\contentsline {section}{\numberline {6.6}Conclusion}{14}{section.6.6}%
+\contentsline {chapter}{Conclusion generale et perspectives}{15}{chapter*.13}%

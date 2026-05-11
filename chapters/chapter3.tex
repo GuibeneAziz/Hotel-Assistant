@@ -1,0 +1,43 @@
+\chapter{Conception et modelisation}
+
+\section{Introduction}
+Ce chapitre decrit la conception de la solution, la structuration des donnees et les principaux flux fonctionnels.
+
+\section{Conception fonctionnelle}
+La solution s'articule autour de deux parcours principaux :
+\begin{itemize}
+  \item parcours client (consultation, profilage, chat intelligent) ;
+  \item parcours administrateur (authentification, gestion contenus, suivi analytics).
+\end{itemize}
+
+\section{Modelisation de la base de donnees}
+La base PostgreSQL est concue pour centraliser les informations hotelieres et les traces d'utilisation :
+\begin{itemize}
+  \item \texttt{hotels}, \texttt{hotel\_settings} ;
+  \item \texttt{conversations}, \texttt{messages} ;
+  \item \texttt{guest\_profiles}, \texttt{analytics\_events} ;
+  \item \texttt{reservations}, \texttt{events}, \texttt{attractions} ;
+  \item \texttt{admin\_users}.
+\end{itemize}
+
+\section{Conception des interfaces}
+Les ecrans principaux incluent :
+\begin{itemize}
+  \item page d'accueil multi-hotels ;
+  \item page detail hotel ;
+  \item interface de chat temps reel ;
+  \item tableau de bord administrateur ;
+  \item interface analytics.
+\end{itemize}
+
+\section{Flux de donnees}
+Le flux d'un message suit les etapes suivantes :
+\begin{enumerate}
+  \item reception et validation de la requete ;
+  \item enrichment via contexte hotel + historique session ;
+  \item generation de reponse par le modele IA ;
+  \item persistence des traces et evenements analytics.
+\end{enumerate}
+
+\section{Conclusion}
+Cette conception fournit une base solide pour la mise en oeuvre technique. Le chapitre suivant detaille l'implementation du chatbot intelligent et son integration RAG.
