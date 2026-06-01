@@ -15,7 +15,6 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
-  isStreaming?: boolean
 }
 
 interface WeatherData {
@@ -32,7 +31,7 @@ interface HotelPageState {
   guestProfile: GuestProfile | null
 }
 
-type HotelId = 'sindbad-hammamet' | 'paradise-hammamet' | 'movenpick-sousse'
+type HotelId = 'sindbad-hammamet' | 'villa-didon-carthage' | 'belvedere-fourati-tunis'
 
 const hotelData: Record<HotelId, {
   name: string
@@ -48,23 +47,23 @@ const hotelData: Record<HotelId, {
     description: 'Luxury beachfront resort',
     image: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800&h=400&fit=crop',
     color: 'from-blue-600 to-cyan-500',
-    coordinates: { lat: 36.4, lon: 10.6167 },
+    coordinates: { lat: 36.405378, lon: 10.598120 },
   },
-  'paradise-hammamet': {
-    name: 'Paradise Beach Hotel',
-    location: 'Hammamet, Tunisia',
-    description: 'Family-friendly paradise',
-    image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&h=400&fit=crop',
-    color: 'from-emerald-600 to-teal-500',
-    coordinates: { lat: 36.4, lon: 10.6167 },
+  'villa-didon-carthage': {
+    name: 'Villa Didon',
+    location: 'Carthage, Tunisia',
+    description: 'Exclusive 5-star boutique hotel on Byrsa Hill',
+    image: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&h=400&fit=crop',
+    color: 'from-violet-600 to-purple-500',
+    coordinates: { lat: 36.853108, lon: 10.326584 },
   },
-  'movenpick-sousse': {
-    name: 'Movenpick Sousse',
-    location: 'Sousse, Tunisia',
-    description: 'Premium resort in historic Sousse',
-    image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&h=400&fit=crop',
-    color: 'from-amber-600 to-orange-500',
-    coordinates: { lat: 35.8256, lon: 10.6411 },
+  'belvedere-fourati-tunis': {
+    name: 'Hôtel Belvédère Fourati',
+    location: 'Tunis, Tunisia',
+    description: '4-star hotel in central Tunis next to Belvédère Park',
+    image: 'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=800&h=400&fit=crop',
+    color: 'from-sky-600 to-blue-500',
+    coordinates: { lat: 36.815361, lon: 10.178663 },
   },
 }
 
@@ -76,17 +75,17 @@ function getDefaultHotelSettings(hotelId: string) {
       address: 'Zone Touristique, Hammamet 8050, Tunisia',
       emergencyPhone: '+216 72 280 100',
     },
-    'paradise-hammamet': {
-      phone: '+216 72 285 200',
-      email: 'info@paradise-hammamet.com',
-      address: 'Avenue des Nations Unies, Hammamet 8050, Tunisia',
-      emergencyPhone: '+216 72 285 100',
+    'villa-didon-carthage': {
+      phone: '+216 31 323 000',
+      email: 'contact@villadidoncarthage.com',
+      address: 'Rue Mendes France, Byrsa Hill, Carthage 2016, Tunisia',
+      emergencyPhone: '+216 31 323 100',
     },
-    'movenpick-sousse': {
-      phone: '+216 73 246 111',
-      email: 'info@movenpick-sousse.com',
-      address: 'Avenue Hedi Chaker, Sousse 4000, Tunisia',
-      emergencyPhone: '+216 73 246 100',
+    'belvedere-fourati-tunis': {
+      phone: '+216 71 783 133',
+      email: 'reservation@hotelbelvederetunis.com',
+      address: '10 Avenue des États-Unis, Belvédère, 1002 Tunis, Tunisia',
+      emergencyPhone: '+216 71 783 100',
     },
   }
 
@@ -115,29 +114,81 @@ function getDefaultHotelSettings(hotelId: string) {
   }
 }
 
-function getWeatherDescription(code: number): string {
-  const codes: Record<number, string> = {
-    0: 'clear sky',
-    1: 'mainly clear',
-    2: 'partly cloudy',
-    3: 'overcast',
-    45: 'fog',
-    51: 'light drizzle',
-    61: 'slight rain',
-    63: 'moderate rain',
-    65: 'heavy rain',
-    71: 'slight snow',
-    80: 'rain showers',
-    95: 'thunderstorm',
-  }
 
-  return codes[code] || 'unknown'
+interface MapTag {
+  name: string
+  lat?: number
+  lon?: number
 }
 
-function parseMessageContent(content: string): { text: string; imageUrls: string[] } {
-  const imageUrls = Array.from(content.matchAll(/\[IMAGE:([^\]]+)\]/g)).map((match) => match[1])
-  const text = content.replace(/\n?\[IMAGE:[^\]]+\]/g, '').trim()
-  return { text, imageUrls }
+interface ImageCard {
+  url: string
+  label?: string
+}
+
+function parseMessageContent(content: string): { text: string; imageCards: ImageCard[]; mapTags: MapTag[] } {
+  const imageCards: ImageCard[] = Array.from(content.matchAll(/\[IMAGE:([^\]]+)\]/g)).map((m) => {
+    const payload = m[1]
+    const separatorIndex = payload.indexOf('|')
+    if (separatorIndex === -1) {
+      return { url: payload }
+    }
+
+    return {
+      label: payload.slice(0, separatorIndex),
+      url: payload.slice(separatorIndex + 1),
+    }
+  })
+
+  const mapTags: MapTag[] = Array.from(content.matchAll(/\[MAP:([^\]]+)\]/g)).map((m) => {
+    const parts = m[1].split('|')
+    const name = parts[0]
+    const lat  = parts[1] ? parseFloat(parts[1]) : undefined
+    const lon  = parts[2] ? parseFloat(parts[2]) : undefined
+    return { name, lat: isNaN(lat as number) ? undefined : lat, lon: isNaN(lon as number) ? undefined : lon }
+  })
+
+  const text = content
+    .replace(/\n?\n?📸 \*\*[^*]+\*\*\n?\[IMAGE:[^\]]+\]/g, '')
+    .replace(/\n?\[IMAGE:[^\]]+\]/g, '')
+    .replace(/\n?\[MAP:[^\]]+\]/g, '')
+    .trim()
+
+  return { text, imageCards, mapTags }
+}
+
+function MapCard({
+  name,
+  lat,
+  lon,
+  hotelLat,
+  hotelLon,
+}: MapTag & { hotelLat: number; hotelLon: number }) {
+  const hasAttractionCoords = lat !== undefined && lon !== undefined
+
+  // Always route FROM the hotel TO the attraction
+  const destination = hasAttractionCoords ? `${lat},${lon}` : encodeURIComponent(name + ', Tunisia')
+  const directionsUrl = `https://www.google.com/maps/dir/${hotelLat},${hotelLon}/${destination}`
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white">
+        <MapPin className="h-4 w-4 text-blue-400 shrink-0" />
+        <span className="truncate">{name}</span>
+      </div>
+      <div className="px-3 py-2.5">
+        <a
+          href={directionsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-xl bg-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-300 transition hover:bg-blue-500/30"
+        >
+          <MapPin className="h-3 w-3" />
+          Get directions on Google Maps
+        </a>
+      </div>
+    </div>
+  )
 }
 
 function formatDateOnly(date: Date): string {
@@ -219,28 +270,30 @@ export default function HotelAssistant() {
     return () => container.removeEventListener('scroll', updateStickToBottom)
   }, [])
 
+  // Fire hotel-settings and weather in parallel on mount
   useEffect(() => {
-    if (!hotelId) return
+    if (!hotelId || !hotel) return
 
-    const loadSettings = async () => {
-      try {
-        const response = await fetch('/api/hotel-settings')
-        if (response.ok) {
-          const result = await response.json()
-          if (result.success && result.data?.[hotelId]) {
-            setHotelSettings(result.data[hotelId])
-            return
-          }
+    const loadSettings = fetch('/api/hotel-settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(result => {
+        if (result?.success && result.data?.[hotelId]) {
+          setHotelSettings(result.data[hotelId])
+        } else {
+          setHotelSettings(getDefaultHotelSettings(hotelId))
         }
-      } catch (error) {
-        console.error('Failed to load hotel settings:', error)
-      }
+      })
+      .catch(() => setHotelSettings(getDefaultHotelSettings(hotelId)))
 
-      setHotelSettings(getDefaultHotelSettings(hotelId))
-    }
+    const loadWeather = fetch(
+      `/api/weather?lat=${hotel.coordinates.lat}&lon=${hotel.coordinates.lon}`
+    )
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data && !data.error) setWeather(data) })
+      .catch(() => {/* weather is optional – silently ignore */})
 
-    loadSettings()
-  }, [hotelId])
+    Promise.all([loadSettings, loadWeather])
+  }, [hotelId, hotel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!hotel) return
@@ -253,28 +306,6 @@ export default function HotelAssistant() {
         timestamp: new Date(),
       },
     ])
-
-    const fetchWeather = async () => {
-      try {
-        const response = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${hotel.coordinates.lat}&longitude=${hotel.coordinates.lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m`
-        )
-        const data = await response.json()
-        const currentWeather = data.current_weather
-
-        setWeather({
-          temperature: currentWeather.temperature,
-          description: getWeatherDescription(currentWeather.weathercode),
-          humidity: data.hourly.relative_humidity_2m[0],
-          wind_speed: currentWeather.windspeed,
-          feels_like: currentWeather.temperature + 2,
-        })
-      } catch (error) {
-        console.error('Failed to load weather:', error)
-      }
-    }
-
-    fetchWeather()
   }, [hotel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update only the welcome message when language changes, without resetting the conversation
@@ -537,7 +568,7 @@ export default function HotelAssistant() {
               <div className="absolute inset-x-0 bottom-0 p-5">
                 <p className="text-sm uppercase tracking-[0.3em] text-white/70">{t('hotelAssistant')}</p>
                 <h2 className="text-2xl font-semibold">{hotel.name}</h2>
-                <p className="mt-2 text-sm text-slate-100/90">{hotel.description}</p>
+                <p className="mt-2 text-sm text-slate-100/90">{t(`hotel_${hotelId}_desc`) || hotel.description}</p>
               </div>
             </div>
           </div>
@@ -608,8 +639,13 @@ export default function HotelAssistant() {
 
           <div
             ref={messagesContainerRef}
-            className="min-h-0 flex flex-1 flex-col justify-end gap-4 overflow-y-auto px-4 py-5 sm:px-6"
+            className="min-h-0 flex flex-1 flex-col overflow-y-auto px-4 py-5 sm:px-6"
           >
+            {/* Spacer pushes messages to the bottom when the list is short.
+                Once messages overflow the container, this shrinks to 0 and
+                the scrollbar can reach every message — unlike justify-end. */}
+            <div className="flex-1" />
+            <div className="flex flex-col gap-4">
             <AnimatePresence initial={false}>
               {messages.map((message) => {
                 const parsed = parseMessageContent(message.content)
@@ -635,25 +671,45 @@ export default function HotelAssistant() {
                         <p className="whitespace-pre-wrap text-sm leading-6">{parsed.text}</p>
                       ) : null}
 
-                      {parsed.imageUrls.length > 0 ? (
+                      {parsed.imageCards.length > 0 ? (
                         <div className="mt-3 space-y-3">
-                          {parsed.imageUrls.map((url) => (
-                            <div key={url} className="relative h-48 overflow-hidden rounded-2xl">
+                          {parsed.imageCards.map((image) => (
+                            <div key={`${image.label || 'photo'}-${image.url}`} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+                              {image.label ? (
+                                <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-200">
+                                  <MapPin className="h-3.5 w-3.5 text-blue-300" />
+                                  <span className="truncate">{image.label}</span>
+                                </div>
+                              ) : null}
+                              <div className="relative h-52">
                               <Image
-                                src={url}
-                                alt="Event"
+                                src={image.url}
+                                alt={image.label ? `Photo of ${image.label}` : 'Photo'}
                                 fill
                                 className="object-cover"
                                 sizes="(max-width: 1024px) 100vw, 420px"
                               />
+                              </div>
                             </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {parsed.mapTags.length > 0 ? (
+                        <div className="space-y-2">
+                          {parsed.mapTags.map((tag) => (
+                            <MapCard
+                              key={tag.name}
+                              {...tag}
+                              hotelLat={hotel.coordinates.lat}
+                              hotelLon={hotel.coordinates.lon}
+                            />
                           ))}
                         </div>
                       ) : null}
 
                       <div className="mt-2 text-xs text-slate-400">
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {message.isStreaming ? ' · streaming' : ''}
                       </div>
                     </div>
                   </motion.div>
@@ -670,6 +726,7 @@ export default function HotelAssistant() {
             ) : null}
 
             <div ref={messagesEndRef} />
+            </div>{/* end messages list */}
           </div>
 
             <div className="border-t border-white/10 p-4 sm:p-6">

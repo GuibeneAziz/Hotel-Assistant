@@ -1,123 +1,117 @@
+/**
+ * Redis client with graceful degradation.
+ *
+ * When the Redis instance is unreachable (e.g. Upstash free-tier paused,
+ * no local Redis running) the client logs ONE warning and then silently
+ * treats every cache operation as a miss / no-op.  The app continues
+ * to function correctly — just without the caching layer.
+ */
+
 import Redis from 'ioredis'
 
-// Singleton pattern for Redis client
 let redis: Redis | null = null
+let redisAvailable = true
+let errorLogged = false          // only log the first failure
 
-export function getRedisClient(): Redis {
-  if (!redis) {
-    // For Upstash or cloud Redis (recommended for production)
-    if (process.env.REDIS_URL) {
-      redis = new Redis(process.env.REDIS_URL, {
-        maxRetriesPerRequest: 3,
+function buildClient(): Redis {
+  const url = process.env.REDIS_URL
+
+  const client = url
+    ? new Redis(url, {
+        maxRetriesPerRequest: 1,
         enableReadyCheck: false,
-        tls: {
-          rejectUnauthorized: false, // Required for Upstash
-        },
+        tls: { rejectUnauthorized: false },  // required for Upstash TLS
         retryStrategy: (times) => {
-          const delay = Math.min(times * 50, 2000)
-          return delay
+          if (times >= 2) {
+            redisAvailable = false
+            return null  // stop reconnecting
+          }
+          return Math.min(times * 200, 1000)
         },
       })
-    } 
-    // For local Redis (development)
-    else {
-      redis = new Redis({
+    : new Redis({
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379'),
         password: process.env.REDIS_PASSWORD,
+        maxRetriesPerRequest: 1,
         retryStrategy: (times) => {
-          const delay = Math.min(times * 50, 2000)
-          return delay
+          if (times >= 2) {
+            redisAvailable = false
+            return null
+          }
+          return Math.min(times * 200, 1000)
         },
-        maxRetriesPerRequest: 3,
       })
+
+  // Log connection issues exactly once, then stay quiet
+  client.on('error', (err: Error) => {
+    if (!errorLogged) {
+      console.warn(`⚠️  Redis unavailable (${err.message.split('\n')[0]}) — caching disabled`)
+      errorLogged = true
+      redisAvailable = false
     }
+  })
 
-    redis.on('error', (err) => {
-      console.error('❌ Redis Client Error:', err.message)
-    })
+  client.on('connect', () => {
+    redisAvailable = true
+    errorLogged = false
+    console.log('✅ Redis connected')
+  })
 
-    redis.on('connect', () => {
-      console.log('✅ Redis connected successfully')
-    })
+  return client
+}
 
-    redis.on('ready', () => {
-      console.log('✅ Redis is ready to accept commands')
-    })
-  }
-
+export function getRedisClient(): Redis {
+  if (!redis) redis = buildClient()
   return redis
 }
 
-// Helper function to get cached data
+// ─── Cache helpers ────────────────────────────────────────────────────────────
+
 export async function getCached<T>(key: string): Promise<T | null> {
+  if (!redisAvailable) return null
   try {
-    const redis = getRedisClient()
-    const cached = await redis.get(key)
-    
-    if (cached) {
-      console.log(`✅ Cache HIT: ${key}`)
-      return JSON.parse(cached) as T
-    }
-    
-    console.log(`❌ Cache MISS: ${key}`)
+    const raw = await getRedisClient().get(key)
+    return raw ? (JSON.parse(raw) as T) : null
+  } catch {
+    redisAvailable = false
     return null
-  } catch (error) {
-    console.error('Redis GET error:', error)
-    return null // Graceful fallback
   }
 }
 
-// Helper function to set cached data
-export async function setCache(
-  key: string,
-  value: any,
-  expirationSeconds: number = 3600
-): Promise<void> {
+export async function setCache(key: string, value: any, expirationSeconds = 3600): Promise<void> {
+  if (!redisAvailable) return
   try {
-    const redis = getRedisClient()
-    await redis.setex(key, expirationSeconds, JSON.stringify(value))
-    console.log(`💾 Cached: ${key} (TTL: ${expirationSeconds}s)`)
-  } catch (error) {
-    console.error('Redis SET error:', error)
-    // Don't throw - caching failure shouldn't break the app
+    await getRedisClient().setex(key, expirationSeconds, JSON.stringify(value))
+  } catch {
+    redisAvailable = false
   }
 }
 
-// Helper function to delete cached data
 export async function deleteCache(key: string): Promise<void> {
+  if (!redisAvailable) return
   try {
-    const redis = getRedisClient()
-    await redis.del(key)
-    console.log(`🗑️ Deleted cache: ${key}`)
-  } catch (error) {
-    console.error('Redis DELETE error:', error)
+    await getRedisClient().del(key)
+  } catch {
+    redisAvailable = false
   }
 }
 
-// Helper function to delete multiple keys by pattern
 export async function deleteCachePattern(pattern: string): Promise<void> {
+  if (!redisAvailable) return
   try {
-    const redis = getRedisClient()
-    const keys = await redis.keys(pattern)
-    
-    if (keys.length > 0) {
-      await redis.del(...keys)
-      console.log(`🗑️ Deleted ${keys.length} cache keys matching: ${pattern}`)
-    }
-  } catch (error) {
-    console.error('Redis DELETE PATTERN error:', error)
+    const keys = await getRedisClient().keys(pattern)
+    if (keys.length > 0) await getRedisClient().del(...keys)
+  } catch {
+    redisAvailable = false
   }
 }
 
-// Health check function
 export async function checkRedisHealth(): Promise<boolean> {
   try {
-    const redis = getRedisClient()
-    const result = await redis.ping()
+    const result = await getRedisClient().ping()
     return result === 'PONG'
-  } catch (error) {
-    console.error('Redis health check failed:', error)
+  } catch {
     return false
   }
 }

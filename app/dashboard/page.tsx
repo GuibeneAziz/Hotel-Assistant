@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { Settings, Save, LogOut, MapPin, Eye, BarChart3, ChevronRight } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Settings, Save, LogOut, MapPin, Eye, BarChart3, ChevronRight, Plus, Trash2, RefreshCw } from 'lucide-react'
 
 interface RestaurantSchedule {
   breakfast: { start: string; end: string; available: boolean }
@@ -81,61 +81,61 @@ const defaultSettings: { [key: string]: HotelSettings } = {
     checkIn: { time: '15:00', instructions: 'Early check-in available upon request' },
     checkOut: { time: '12:00', instructions: 'Late check-out available until 14:00 for additional fee' }
   },
-  'paradise-hammamet': {
-    name: 'Paradise Beach Hotel',
+  'villa-didon-carthage': {
+    name: 'Villa Didon',
     restaurant: {
-      breakfast: { start: '07:00', end: '10:30', available: true },
+      breakfast: { start: '07:30', end: '10:30', available: true },
       lunch: { start: '12:30', end: '15:30', available: true },
-      dinner: { start: '18:30', end: '22:30', available: true }
+      dinner: { start: '19:30', end: '22:30', available: true }
     },
     spa: {
       available: true,
       openTime: '09:00',
       closeTime: '20:00',
-      treatments: ['Couples Massage', 'Relaxation Therapy', 'Beauty Treatments']
+      treatments: ['Hammam Royal', 'Thalassotherapy', 'Aromatherapy Massage', 'Reflexology']
     },
-    pool: { openTime: '06:00', closeTime: '22:00', available: true },
-    gym: { openTime: '05:00', closeTime: '23:00', available: true },
-    kidsClub: { openTime: '09:00', closeTime: '17:00', available: true, ageRange: '4-12' },
-    specialEvents: [],
-    contact: {
-      phone: '+216 72 285 200',
-      email: 'info@paradise-hammamet.com',
-      address: 'Avenue des Nations Unies, Hammamet 8050, Tunisia',
-      emergencyPhone: '+216 72 285 100'
-    },
-    wifi: { available: true, password: 'Paradise2024', instructions: 'Connect to "Paradise_WiFi" network' },
-    parking: { available: true, price: 'Free', instructions: 'Valet parking available' },
-    checkIn: { time: '14:00', instructions: 'Welcome drink included with check-in' },
-    checkOut: { time: '12:00', instructions: 'Express check-out available at reception' }
-  },
-  'movenpick-sousse': {
-    name: 'Mövenpick Sousse',
-    restaurant: {
-      breakfast: { start: '06:30', end: '10:00', available: true },
-      lunch: { start: '12:00', end: '15:00', available: true },
-      dinner: { start: '19:00', end: '23:00', available: true }
-    },
-    spa: {
-      available: true,
-      openTime: '08:00',
-      closeTime: '21:00',
-      treatments: ['Traditional Hammam', 'Aromatherapy', 'Hot Stone Massage']
-    },
-    pool: { openTime: '06:00', closeTime: '22:00', available: true },
-    gym: { openTime: '00:00', closeTime: '23:59', available: true },
+    pool: { openTime: '08:00', closeTime: '20:00', available: true },
+    gym: { openTime: '06:00', closeTime: '22:00', available: true },
     kidsClub: { openTime: '09:00', closeTime: '17:00', available: false, ageRange: 'N/A' },
     specialEvents: [],
     contact: {
-      phone: '+216 73 246 111',
-      email: 'info@movenpick-sousse.com',
-      address: 'Avenue Hedi Chaker, Sousse 4000, Tunisia',
-      emergencyPhone: '+216 73 246 100'
+      phone: '+216 31 323 000',
+      email: 'contact@villadidoncarthage.com',
+      address: 'Rue Mendes France, Byrsa Hill, Carthage 2016, Tunisia',
+      emergencyPhone: '+216 31 323 100'
     },
-    wifi: { available: true, password: 'Movenpick2024', instructions: 'Connect to "Movenpick_WiFi" network' },
-    parking: { available: true, price: '10 TND/day', instructions: 'Secure underground parking' },
-    checkIn: { time: '15:00', instructions: 'Mobile check-in available via app' },
-    checkOut: { time: '11:00', instructions: 'Express check-out via TV or mobile app' }
+    wifi: { available: true, password: 'VillaDidon2024', instructions: 'Connect to "VillaDidon_Guest" — password at check-in' },
+    parking: { available: true, price: 'Free valet', instructions: 'Valet parking available 24h' },
+    checkIn: { time: '14:00', instructions: 'Early check-in from 11:00 subject to availability' },
+    checkOut: { time: '12:00', instructions: 'Late check-out until 15:00 on request' }
+  },
+  'belvedere-fourati-tunis': {
+    name: 'Hôtel Belvédère Fourati',
+    restaurant: {
+      breakfast: { start: '07:00', end: '10:30', available: true },
+      lunch: { start: '12:00', end: '15:00', available: true },
+      dinner: { start: '19:00', end: '22:30', available: true }
+    },
+    spa: {
+      available: false,
+      openTime: '00:00',
+      closeTime: '00:00',
+      treatments: []
+    },
+    pool: { openTime: '07:00', closeTime: '21:00', available: true },
+    gym: { openTime: '06:00', closeTime: '23:00', available: true },
+    kidsClub: { openTime: '09:00', closeTime: '17:00', available: false, ageRange: 'N/A' },
+    specialEvents: [],
+    contact: {
+      phone: '+216 71 783 133',
+      email: 'reservation@hotelbelvederetunis.com',
+      address: '10 Avenue des États-Unis, Belvédère, 1002 Tunis, Tunisia',
+      emergencyPhone: '+216 71 783 100'
+    },
+    wifi: { available: true, password: 'Belvedere2024', instructions: 'Free WiFi throughout — ask reception for the password' },
+    parking: { available: true, price: 'Free', instructions: 'Free covered parking on-site, 24h access' },
+    checkIn: { time: '14:00', instructions: 'Express check-in available; ID required' },
+    checkOut: { time: '12:00', instructions: 'Late check-out until 14:00 for a small fee' }
   }
 }
 
@@ -161,6 +161,18 @@ export default function AdminDashboard() {
   const [reservations, setReservations] = useState<any[]>([])
   const [reservationsLoading, setReservationsLoading] = useState(false)
   const [reservationsError, setReservationsError] = useState('')
+
+  // Attractions state
+  const [attractions, setAttractions] = useState<any[]>([])
+  const [attractionsLoading, setAttractionsLoading] = useState(false)
+  const [attractionsError, setAttractionsError] = useState('')
+  const [attractionSaving, setAttractionSaving] = useState(false)
+  const [newAttraction, setNewAttraction] = useState({
+    attraction_name: '', description: '', category: 'cultural',
+    distance: '', estimated_duration: '', price_range: '', transportation: '', image_url: '',
+  })
+  // Inline photo editing: maps attraction id → draft URL string
+  const [photoEditing, setPhotoEditing] = useState<Record<number, string>>({})
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken')
@@ -265,6 +277,100 @@ export default function AdminDashboard() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, selectedHotel])
+
+  const loadAttractions = useCallback(async (hotelId: string) => {
+    setAttractionsLoading(true)
+    setAttractionsError('')
+    try {
+      const token = localStorage.getItem('adminToken')
+      const res = await fetch(`/api/admin/attractions?hotelId=${hotelId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const result = await res.json()
+      if (result.success) setAttractions(result.data)
+      else setAttractionsError(result.error || 'Failed to load attractions')
+    } catch {
+      setAttractionsError('Network error loading attractions')
+    } finally {
+      setAttractionsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'attractions') loadAttractions(selectedHotel)
+  }, [activeTab, selectedHotel, loadAttractions])
+
+  const addAttraction = async () => {
+    if (!newAttraction.attraction_name || !newAttraction.category) return
+    setAttractionSaving(true)
+    try {
+      const token = localStorage.getItem('adminToken')
+      const res = await fetch('/api/admin/attractions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ hotelId: selectedHotel, ...newAttraction }),
+      })
+      const result = await res.json()
+      if (result.success) {
+        setAttractions(prev => [...prev.filter(a => a.id !== result.data.id), result.data]
+          .sort((a, b) => a.category.localeCompare(b.category) || a.attraction_name.localeCompare(b.attraction_name)))
+        setNewAttraction({ attraction_name: '', description: '', category: 'cultural', distance: '', estimated_duration: '', price_range: '', transportation: '', image_url: '' })
+      } else {
+        alert(result.error || 'Failed to save attraction')
+      }
+    } catch {
+      alert('Network error')
+    } finally {
+      setAttractionSaving(false)
+    }
+  }
+
+  const deleteAttraction = async (id: number) => {
+    if (!confirm('Delete this attraction?')) return
+    try {
+      const token = localStorage.getItem('adminToken')
+      const res = await fetch(`/api/admin/attractions?id=${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const result = await res.json()
+      if (result.success) setAttractions(prev => prev.filter(a => a.id !== id))
+      else alert(result.error || 'Failed to delete')
+    } catch {
+      alert('Network error')
+    }
+  }
+
+  const saveAttractionPhoto = async (attraction: any) => {
+    const image_url = photoEditing[attraction.id]?.trim() || ''
+    try {
+      const token = localStorage.getItem('adminToken')
+      const res = await fetch('/api/admin/attractions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          hotelId: selectedHotel,
+          attraction_name: attraction.attraction_name,
+          description: attraction.description,
+          category: attraction.category,
+          distance: attraction.distance,
+          estimated_duration: attraction.estimated_duration,
+          price_range: attraction.price_range,
+          transportation: attraction.transportation,
+          image_url,
+        }),
+      })
+      const result = await res.json()
+      if (result.success) {
+        setAttractions(prev => prev.map(a => a.id === attraction.id ? { ...a, image_url } : a))
+        setPhotoEditing(prev => { const n = { ...prev }; delete n[attraction.id]; return n })
+      } else {
+        alert(result.error || 'Failed to save photo')
+      }
+    } catch {
+      alert('Network error')
+    }
+  }
 
   const handleEventImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -645,9 +751,9 @@ export default function AdminDashboard() {
               <h3 className="text-lg font-semibold text-white">Special Events</h3>
               
               {/* Add New Event */}
-              <div className="bg-blue-50/60 rounded-xl p-5 border border-blue-200/40">
+              <div className="rounded-xl p-5 border border-indigo-500/25" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(6,182,212,0.05) 100%)' }}>
                 <h4 className="font-semibold mb-4 flex items-center space-x-2 text-white">
-                  <span>➕</span>
+                  <span className="w-7 h-7 rounded-lg bg-indigo-500/20 flex items-center justify-center text-base">🎉</span>
                   <span>Add New Event</span>
                 </h4>
                 <div className="grid md:grid-cols-2 gap-3">
@@ -686,8 +792,14 @@ export default function AdminDashboard() {
                   </label>
                   <span className="text-xs text-gray-400">(guests will see a &ldquo;Reserve a spot&rdquo; button)</span>
                 </div>
-                <button onClick={addSpecialEvent} disabled={!newEvent.title || !newEvent.date} className="mt-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-5 py-2 rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-blue-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  Add Event
+                <button
+                  onClick={addSpecialEvent}
+                  disabled={!newEvent.title || !newEvent.date}
+                  className="mt-3 flex items-center space-x-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Event</span>
                 </button>
               </div>
 
@@ -717,7 +829,7 @@ export default function AdminDashboard() {
                               {event.location && <span className="bg-white/10 px-2 py-1 rounded-md">📍 {event.location}</span>}
                               {event.price && <span className="bg-white/10 px-2 py-1 rounded-md">💰 {event.price}</span>}
                               {event.requiresReservation && (
-                                <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md">📅 Reservation required</span>
+                                <span className="bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 px-2 py-1 rounded-md">📅 Reservation required</span>
                               )}
                             </div>
                           </div>
@@ -828,48 +940,264 @@ export default function AdminDashboard() {
 
           {activeTab === 'attractions' && (
             <motion.div className="space-y-5" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-              <h3 className="text-lg font-semibold text-white">Nearby Attractions</h3>
-              
-              <div className="bg-amber-50/60 border border-amber-200/40 rounded-xl p-4">
-                <div className="flex items-start space-x-3">
-                  <span className="text-xl">⚠️</span>
-                  <div>
-                    <h4 className="font-semibold text-amber-800 text-sm">Database-Only Recommendations</h4>
-                    <p className="text-amber-700 text-sm mt-1">
-                      The chatbot only recommends attractions from this list. Add all attractions you want guests to know about.
-                    </p>
+              {/* Header row */}
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">Nearby Attractions</h3>
+                <button
+                  onClick={() => loadAttractions(selectedHotel)}
+                  disabled={attractionsLoading}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 border border-white/10 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all disabled:opacity-40"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${attractionsLoading ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {/* Info banner */}
+              <div className="flex items-start space-x-3 rounded-xl p-4 border border-amber-500/20" style={{ background: 'rgba(245,158,11,0.06)' }}>
+                <span className="text-lg">💡</span>
+                <p className="text-sm text-amber-300/80">
+                  The AI chatbot only recommends attractions from this list. Keep it up to date so guests get accurate, personalised suggestions.
+                </p>
+              </div>
+
+              {/* ── Add new attraction form ─────────────────────────────────────── */}
+              <div className="rounded-xl p-5 border border-indigo-500/25 space-y-4" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(6,182,212,0.05) 100%)' }}>
+                <h4 className="font-semibold flex items-center space-x-2 text-white text-sm">
+                  <span className="w-7 h-7 rounded-lg bg-indigo-500/20 flex items-center justify-center text-base">🗺️</span>
+                  <span>Add New Attraction</span>
+                </h4>
+
+                <div className="grid md:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Attraction name *"
+                    value={newAttraction.attraction_name}
+                    onChange={e => setNewAttraction(p => ({ ...p, attraction_name: e.target.value }))}
+                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  />
+                  <select
+                    value={newAttraction.category}
+                    onChange={e => setNewAttraction(p => ({ ...p, category: e.target.value }))}
+                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  >
+                    {['cultural','nature','adventure','entertainment','shopping','restaurant','cafe'].map(c => (
+                      <option key={c} value={c} className="bg-gray-900 capitalize">{c.charAt(0).toUpperCase()+c.slice(1)}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Distance (e.g. 2 km)"
+                    value={newAttraction.distance}
+                    onChange={e => setNewAttraction(p => ({ ...p, distance: e.target.value }))}
+                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Duration (e.g. 1-2 hours)"
+                    value={newAttraction.estimated_duration}
+                    onChange={e => setNewAttraction(p => ({ ...p, estimated_duration: e.target.value }))}
+                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Price range (e.g. Free, 10-20 TND)"
+                    value={newAttraction.price_range}
+                    onChange={e => setNewAttraction(p => ({ ...p, price_range: e.target.value }))}
+                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Transportation (e.g. Taxi, Walking)"
+                    value={newAttraction.transportation}
+                    onChange={e => setNewAttraction(p => ({ ...p, transportation: e.target.value }))}
+                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  />
+                </div>
+
+                <textarea
+                  placeholder="Description — what makes this attraction special? (recommended)"
+                  value={newAttraction.description}
+                  onChange={e => setNewAttraction(p => ({ ...p, description: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all resize-none"
+                />
+
+                {/* Image URL input with live thumbnail preview */}
+                <div className="space-y-2">
+                  <input
+                    type="url"
+                    placeholder="Photo URL (e.g. https://upload.wikimedia.org/…) — optional"
+                    value={newAttraction.image_url}
+                    onChange={e => setNewAttraction(p => ({ ...p, image_url: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                  />
+                  {newAttraction.image_url && (
+                    <div className="relative h-32 w-full overflow-hidden rounded-xl border border-white/10">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={newAttraction.image_url}
+                        alt="Preview"
+                        className="h-full w-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={addAttraction}
+                  disabled={!newAttraction.attraction_name || !newAttraction.category || attractionSaving}
+                  className="flex items-center space-x-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}
+                >
+                  {attractionSaving
+                    ? <RefreshCw className="w-4 h-4 animate-spin" />
+                    : <Plus className="w-4 h-4" />
+                  }
+                  <span>{attractionSaving ? 'Saving…' : 'Add Attraction'}</span>
+                </button>
+              </div>
+
+              {/* ── Attractions list ─────────────────────────────────────────────── */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    {attractionsLoading ? 'Loading…' : `${attractions.length} attraction${attractions.length !== 1 ? 's' : ''}`}
+                  </p>
+                </div>
+
+                {attractionsError && (
+                  <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-400">{attractionsError}</div>
+                )}
+
+                {!attractionsLoading && !attractionsError && attractions.length === 0 && (
+                  <div className="bg-white/5 rounded-xl p-8 border border-white/10 text-center text-gray-500">
+                    No attractions added yet. Use the form above to add the first one.
                   </div>
-                </div>
-              </div>
+                )}
 
-              <div className="bg-blue-50/60 border border-blue-200/40 rounded-xl p-5">
-                <h4 className="font-semibold text-blue-800 text-sm mb-2">🚧 Attractions Management Coming Soon</h4>
-                <p className="text-blue-700 text-sm mb-3">
-                  The enhanced attractions management system will include:
-                </p>
-                <ul className="text-blue-700 text-sm space-y-1 ml-4">
-                  <li>• Add/edit attractions with detailed information</li>
-                  <li>• Target specific guest types (couples, families, solo)</li>
-                  <li>• Set weather conditions for each attraction</li>
-                  <li>• Manage booking requirements and contact info</li>
-                  <li>• Prioritize attractions for better recommendations</li>
-                </ul>
-                <p className="text-blue-600 text-sm mt-3">
-                  For now, attractions are managed through the database.
-                </p>
-              </div>
+                {/* Group by category */}
+                {!attractionsLoading && (() => {
+                  const categories = [...new Set(attractions.map(a => a.category))].sort()
+                  const categoryEmoji: Record<string, string> = {
+                    cultural: '🏛️', nature: '🌿', adventure: '🏄', entertainment: '🎭',
+                    shopping: '🛍️', restaurant: '🍽️', cafe: '☕',
+                  }
+                  return categories.map(cat => (
+                    <div key={cat}>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2 flex items-center space-x-1.5">
+                        <span>{categoryEmoji[cat] ?? '📍'}</span>
+                        <span>{cat}</span>
+                        <span className="text-gray-600">({attractions.filter(a => a.category === cat).length})</span>
+                      </p>
+                      <AnimatePresence>
+                        {attractions.filter(a => a.category === cat).map(a => (
+                          <motion.div
+                            key={a.id}
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="bg-white/5 rounded-xl p-4 border border-white/10 mb-2 hover:border-white/20 transition-all"
+                          >
+                            <div className="flex items-start gap-3">
+                              {/* Thumbnail */}
+                              {a.image_url && (
+                                <div className="flex-shrink-0 h-16 w-20 overflow-hidden rounded-lg border border-white/10">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={a.image_url} alt={a.attraction_name} className="h-full w-full object-cover" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-white text-sm truncate">{a.attraction_name}</p>
+                                {a.description && (
+                                  <p className="text-xs text-gray-400 mt-1 line-clamp-2">{a.description}</p>
+                                )}
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {a.distance && (
+                                    <span className="bg-white/10 px-2 py-0.5 rounded-md text-xs text-gray-400">📍 {a.distance}</span>
+                                  )}
+                                  {a.estimated_duration && (
+                                    <span className="bg-white/10 px-2 py-0.5 rounded-md text-xs text-gray-400">🕐 {a.estimated_duration}</span>
+                                  )}
+                                  {a.price_range && (
+                                    <span className="bg-white/10 px-2 py-0.5 rounded-md text-xs text-gray-400">💰 {a.price_range}</span>
+                                  )}
+                                  {a.transportation && (
+                                    <span className="bg-white/10 px-2 py-0.5 rounded-md text-xs text-gray-400">🚗 {a.transportation}</span>
+                                  )}
+                                  {!a.image_url && (
+                                    <span className="bg-yellow-500/10 px-2 py-0.5 rounded-md text-xs text-yellow-500/70">No photo</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-1 flex-shrink-0">
+                                <button
+                                  onClick={() => setPhotoEditing(prev =>
+                                    prev[a.id] !== undefined
+                                      ? (({ [a.id]: _, ...rest }) => rest)(prev)
+                                      : { ...prev, [a.id]: a.image_url || '' }
+                                  )}
+                                  className="p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all text-xs"
+                                  title={a.image_url ? 'Change photo' : 'Add photo'}
+                                >
+                                  📷
+                                </button>
+                                <button
+                                  onClick={() => deleteAttraction(a.id)}
+                                  className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                  title="Delete attraction"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
 
-              <div className="bg-white/5 rounded-xl p-5 border border-white/10">
-                <h4 className="font-semibold mb-3 text-white text-sm">Database Schema</h4>
-                <div className="bg-black/20 rounded-lg p-4 text-xs font-mono text-gray-400 space-y-1 border border-white/10">
-                  <p>• attraction_name — Name of the attraction</p>
-                  <p>• description — Detailed description</p>
-                  <p>• category — cultural, adventure, shopping, nature, entertainment</p>
-                  <p>• distance — Distance from hotel</p>
-                  <p>• estimated_duration — How long the visit takes</p>
-                  <p>• price_range — Cost information</p>
-                  <p>• transportation — How to get there</p>
-                </div>
+                            {/* Inline photo editor — shown when 📷 is clicked */}
+                            {photoEditing[a.id] !== undefined && (
+                              <div className="mt-2 p-3 bg-white/5 rounded-xl border border-indigo-500/30 space-y-2">
+                                <p className="text-xs text-indigo-300 font-medium">Paste a photo URL for this attraction:</p>
+                                <input
+                                  type="url"
+                                  placeholder="https://upload.wikimedia.org/… or any image URL"
+                                  value={photoEditing[a.id]}
+                                  onChange={e => setPhotoEditing(prev => ({ ...prev, [a.id]: e.target.value }))}
+                                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 outline-none transition-all"
+                                />
+                                {photoEditing[a.id] && (
+                                  <div className="relative h-28 w-full overflow-hidden rounded-lg border border-white/10">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={photoEditing[a.id]}
+                                      alt="Preview"
+                                      className="h-full w-full object-cover"
+                                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                                    />
+                                  </div>
+                                )}
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => saveAttractionPhoto(a)}
+                                    className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"
+                                    style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)' }}
+                                  >
+                                    Save Photo
+                                  </button>
+                                  <button
+                                    onClick={() => setPhotoEditing(prev => { const n = { ...prev }; delete n[a.id]; return n })}
+                                    className="px-4 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-all"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  ))
+                })()}
               </div>
             </motion.div>
           )}
@@ -880,9 +1208,10 @@ export default function AdminDashboard() {
                 <h3 className="text-lg font-semibold text-white">Event Reservations</h3>
                 <button
                   onClick={() => loadReservations(selectedHotel)}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 border border-white/10 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all"
                 >
-                  ↻ Refresh
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Refresh</span>
                 </button>
               </div>
 
@@ -891,7 +1220,7 @@ export default function AdminDashboard() {
               )}
 
               {reservationsError && (
-                <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">{reservationsError}</div>
+                <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-400">{reservationsError}</div>
               )}
 
               {!reservationsLoading && !reservationsError && reservations.length === 0 && (
@@ -911,12 +1240,12 @@ export default function AdminDashboard() {
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                               r.status === 'confirmed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
                               r.status === 'cancelled' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                              'bg-amber-100 text-amber-700 border border-amber-200'
+                              'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                             }`}>
                               {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
                             </span>
                           </div>
-                          <p className="text-sm text-blue-700 font-medium mt-1">{r.event_title}</p>
+                          <p className="text-sm text-indigo-300 font-medium mt-1">{r.event_title}</p>
                           <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-500">
                             <span className="bg-white/10 px-2 py-1 rounded-md">📅 {r.event_date}</span>
                             {r.event_time && <span className="bg-white/10 px-2 py-1 rounded-md">🕐 {r.event_time}</span>}

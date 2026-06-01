@@ -363,17 +363,27 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
   // Weather Information
   if (weather) {
     knowledge.push(`=== CURRENT WEATHER ===`)
-    knowledge.push(`Temperature: ${weather.temperature}°C (feels like ${weather.feels_like}°C)`)
+    knowledge.push(`Temperature: ${weather.temperature}°C (feels like ${weather.feels_like ?? weather.temperature}°C)`)
     knowledge.push(`Conditions: ${weather.description}`)
-    knowledge.push(`Humidity: ${weather.humidity}%`)
-    knowledge.push(`Wind Speed: ${weather.wind_speed} km/h`)
+    knowledge.push(`Humidity: ${weather.humidity ?? 'N/A'}%`)
+    knowledge.push(`Wind Speed: ${weather.wind_speed ?? 0} km/h`)
     
-    // Weather-based recommendations
-    const isGoodSwimming = weather.temperature >= 25 && !weather.description.includes('rain')
-    if (isGoodSwimming) {
-      knowledge.push(`Weather Note: Perfect weather for swimming and outdoor activities!`)
-    } else if (weather.description.includes('rain')) {
-      knowledge.push(`Weather Note: Rainy weather - recommend indoor activities like spa or gym`)
+    // Explicit weather directive for indoor/outdoor guidance
+    const desc = (weather.description ?? '').toLowerCase()
+    const isRainy = desc.includes('rain') || desc.includes('shower') || desc.includes('drizzle')
+    const isWindy = (weather.wind_speed ?? 0) > 20
+    const temp    = weather.temperature ?? 25
+
+    if (isRainy) {
+      knowledge.push(`Weather Directive: ⛈️ RAINY today — recommend indoor activities (spa, gym, cafés, museums, restaurants). Outdoor/pool activities are discouraged.`)
+    } else if (isWindy) {
+      knowledge.push(`Weather Directive: 💨 WINDY today — prefer sheltered venues. Outdoor activities are possible but may be uncomfortable.`)
+    } else if (temp >= 35) {
+      knowledge.push(`Weather Directive: ☀️ VERY HOT (${temp}°C) — suggest early-morning or evening outdoor activities. Air-conditioned indoor venues are comfortable alternatives.`)
+    } else if (temp >= 22) {
+      knowledge.push(`Weather Directive: 🌤️ IDEAL WEATHER (${temp}°C) — perfect for outdoor activities, pool, beach, and nature visits.`)
+    } else {
+      knowledge.push(`Weather Directive: 🌥️ COOL (${temp}°C) — indoor cafés, cultural sites, and restaurants are especially appealing.`)
     }
     knowledge.push('')
   }
@@ -471,6 +481,22 @@ export async function buildPersonalizedHotelKnowledge(
 ): Promise<string> {
   const clusteringWeather: ClusteringWeather = parseWeatherConditions(weather)
 
+  // Build a guest context header so the AI always knows who it's talking to
+  const groupLabels: Record<string, string> = {
+    solo: 'solo traveller', couple: 'couple', family: 'family with children', group: 'group',
+  }
+  const purposeLabels: Record<string, string> = {
+    leisure: 'leisure trip', business: 'business trip', family: 'family trip', honeymoon: 'honeymoon',
+  }
+  const guestContextHeader = [
+    `=== CURRENT GUEST PROFILE ===`,
+    `Age range: ${guestProfile.ageRange}`,
+    `Group type: ${groupLabels[guestProfile.groupType] ?? guestProfile.groupType}`,
+    `Travel purpose: ${purposeLabels[guestProfile.travelPurpose] ?? guestProfile.travelPurpose}`,
+    `Note: The NEARBY ATTRACTIONS section below is already sorted and scored for this specific profile.`,
+    ``,
+  ].join('\n')
+
   // Build the full knowledge string (with raw attractions dumped by default)
   const fullKnowledge = buildHotelKnowledge(
     { ...hotelSettings, nearbyAttractions: [] }, // pass empty so we control the section
@@ -493,14 +519,12 @@ export async function buildPersonalizedHotelKnowledge(
   if (fullKnowledge.includes('=== NEARBY ATTRACTIONS ===')) {
     // Split at the attractions header and replace that section
     const parts = fullKnowledge.split('=== NEARBY ATTRACTIONS ===')
-    // parts[0] = everything before, parts[1] = everything after (including next sections)
-    // Find where the next section starts in parts[1]
     const afterAttractions = parts[1] ?? ''
     const nextSectionIdx = afterAttractions.indexOf('===')
     const suffix = nextSectionIdx >= 0 ? afterAttractions.slice(nextSectionIdx) : ''
-    return parts[0] + attractionsContext + '\n' + suffix
+    return guestContextHeader + parts[0] + attractionsContext + '\n' + suffix
   }
 
   // Fallback: append clustering block at the end
-  return fullKnowledge.replace(PLACEHOLDER, '') + '\n' + attractionsContext
+  return guestContextHeader + fullKnowledge.replace(PLACEHOLDER, '') + '\n' + attractionsContext
 }

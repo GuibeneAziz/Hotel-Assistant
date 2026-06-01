@@ -295,8 +295,8 @@ export default function AnalyticsPage() {
               >
                 <option value="all" className="bg-gray-900">All Hotels</option>
                 <option value="sindbad-hammamet" className="bg-gray-900">Sindbad Hotel</option>
-                <option value="paradise-hammamet" className="bg-gray-900">Paradise Beach</option>
-                <option value="movenpick-sousse" className="bg-gray-900">Mövenpick Sousse</option>
+                <option value="villa-didon-carthage" className="bg-gray-900">Villa Didon</option>
+                <option value="belvedere-fourati-tunis" className="bg-gray-900">Belvédère Fourati</option>
               </select>
 
               {/* Refresh */}

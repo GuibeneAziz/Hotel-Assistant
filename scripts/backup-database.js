@@ -20,7 +20,6 @@ async function backup() {
       timestamp: new Date().toISOString(),
       hotels: [],
       facilities: [],
-      facility_attributes: [],
       contact_info: [],
       amenities: [],
       special_events: [],

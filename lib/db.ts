@@ -40,10 +40,9 @@ export async function getAllHotelSettings() {
 
     const hotelIds: string[] = hotelsResult.rows.map((h: any) => h.hotel_id)
 
-    // Run all 7 sub-queries in parallel across all hotels at once
+    // Run all 6 sub-queries in parallel across all hotels at once
     const [
       facilitiesResult,
-      facilityAttrsResult,
       contactResult,
       amenitiesResult,
       eventsResult,
@@ -51,16 +50,8 @@ export async function getAllHotelSettings() {
       attractionsResult,
     ] = await Promise.all([
       client.query(
-        `SELECT hotel_id, facility_type, facility_name, open_time, close_time, is_available, id
+        `SELECT hotel_id, facility_type, facility_name, open_time, close_time, is_available, treatments, age_range
          FROM facilities WHERE hotel_id = ANY($1)`,
-        [hotelIds]
-      ),
-      client.query(
-        `SELECT f.hotel_id, f.facility_type, fa.attribute_key, fa.attribute_value
-         FROM facilities f
-         JOIN facility_attributes fa ON f.id = fa.facility_id
-         WHERE f.hotel_id = ANY($1)
-         ORDER BY f.facility_type, fa.attribute_key`,
         [hotelIds]
       ),
       client.query(
@@ -86,7 +77,7 @@ export async function getAllHotelSettings() {
         [hotelIds]
       ),
       client.query(
-        `SELECT hotel_id, attraction_name, category, description, distance, estimated_duration, price_range, transportation
+        `SELECT hotel_id, attraction_name, category, description, distance, estimated_duration, price_range, transportation, image_url, latitude, longitude
          FROM nearby_attractions WHERE hotel_id = ANY($1)
          ORDER BY category, attraction_name`,
         [hotelIds]
@@ -129,23 +120,13 @@ export async function getAllHotelSettings() {
           s.restaurant[mealType] = { start: facility.open_time, end: facility.close_time, available: facility.is_available }
         }
       } else if (facility.facility_type === 'spa') {
-        s.spa = { available: facility.is_available, openTime: facility.open_time, closeTime: facility.close_time, treatments: [] }
+        s.spa = { available: facility.is_available, openTime: facility.open_time, closeTime: facility.close_time, treatments: facility.treatments || [] }
       } else if (facility.facility_type === 'pool') {
         s.pool = { openTime: facility.open_time, closeTime: facility.close_time, available: facility.is_available }
       } else if (facility.facility_type === 'gym') {
         s.gym = { openTime: facility.open_time, closeTime: facility.close_time, available: facility.is_available }
       } else if (facility.facility_type === 'kids_club') {
-        s.kidsClub = { openTime: facility.open_time, closeTime: facility.close_time, available: facility.is_available, ageRange: '' }
-      }
-    }
-
-    for (const attr of facilityAttrsResult.rows) {
-      const s = settings[attr.hotel_id]
-      if (!s) continue
-      if (attr.facility_type === 'spa' && attr.attribute_key === 'treatment') {
-        s.spa.treatments.push(attr.attribute_value)
-      } else if (attr.facility_type === 'kids_club' && attr.attribute_key === 'age_range') {
-        s.kidsClub.ageRange = attr.attribute_value
+        s.kidsClub = { openTime: facility.open_time, closeTime: facility.close_time, available: facility.is_available, ageRange: facility.age_range || '' }
       }
     }
 

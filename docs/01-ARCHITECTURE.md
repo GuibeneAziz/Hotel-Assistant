@@ -1,137 +1,197 @@
-# Architecture du Projet
+# Architecture — Tunisia Hotel Assistant
 
----
+## 1. Overview
 
-## Technologies utilisées
+The application is a multi-tenant hotel assistant platform. Each hotel has its own dedicated chatbot page. Guests interact with an AI assistant that knows everything about the hotel (facilities, events, weather, nearby attractions) because that data is retrieved from the database and injected into the AI's prompt at runtime — this is the RAG architecture.
 
-| Couche | Technologie | Rôle |
+The system has three main user-facing surfaces:
+
+| Surface | URL | Who uses it |
 |---|---|---|
-| Frontend | Next.js 14 (App Router) + React 18 | Interface utilisateur |
-| Backend | Next.js API Routes (HTTP) | Logique serveur |
-| Base de données | PostgreSQL via NeonDB | Stockage persistant |
-| Cache | Redis via Upstash | Cache réponses + sessions |
-| IA | Groq SDK (LLaMA 3.3 70B) | Génération des réponses chat |
-| Authentification | JWT (jsonwebtoken) | Accès admin sécurisé |
-| Styles | Tailwind CSS + Framer Motion | UI + animations |
-| Graphiques | Recharts | Dashboard analytics |
-| Validation | Zod + DOMPurify | Sécurité des entrées |
+| Landing page | `/` | Guests — choose their hotel |
+| Chatbot | `/hotel/[hotelId]` | Guests — chat with the AI |
+| Admin dashboard | `/dashboard` | Hotel staff — manage settings |
+| Analytics | `/admin/analytics` | Hotel staff — view statistics |
 
 ---
 
-## Flux de données : parcours complet d'un client
+## 2. High-Level Architecture
 
 ```
-1. Le client ouvre http://localhost:3001
-        ↓
-2. app/page.tsx affiche les 3 hôtels
-        ↓
-3. Le client clique sur un hôtel → /hotel/sindbad-hammamet
-        ↓
-4. app/hotel/[id]/page.tsx charge :
-   - GET /api/hotel-settings → informations de l'hôtel depuis la base de données
-   - API OpenMeteo → météo actuelle (coordonnées GPS de Hammamet)
-        ↓
-5. Formulaire d'inscription : GuestRegistrationForm.tsx
-   - Collecte : tranche d'âge, nationalité, but du voyage, type de groupe
-   - POST /api/analytics/guest-profile → sauvegarde dans guest_profiles
-   - Génère un sessionId = "session_{timestamp}_{random}"
-        ↓
-6. Le client envoie un message dans le chat
-        ↓
-7. POST /api/chat ou POST /api/chat/stream
-   - Vérifie le rate limit (30 msg / 15 min)
-   - Valide et nettoie l'entrée (Zod + DOMPurify)
-   - Charge les paramètres hôtel (depuis Redis ou DB)
-   - Récupère l'historique de session (Redis)
-   - Construit la base de connaissances RAG (lib/rag-knowledge.ts)
-   - Appelle Groq AI avec le contexte
-   - Renvoie la réponse (stream SSE ou JSON)
-   - Track les analytics en arrière-plan (non-bloquant)
-        ↓
-8. La réponse s'affiche dans le chat
-   - Les balises [IMAGE:url] sont converties en images réelles
-```
-
----
-
-## Flux de données : parcours admin
-
-```
-1. L'admin ouvre /admin/login
-        ↓
-2. POST /api/admin/login
-   - Vérifie username + password (bcrypt, 12 rounds)
-   - Génère un JWT (expire dans 24h)
-   - Stocké dans localStorage
-        ↓
-3. Redirigé vers /dashboard
-        ↓
-4. app/dashboard/layout.tsx vérifie le JWT à chaque chargement
-   - GET /api/admin/verify → valide le token
-   - Si invalide → redirigé vers /admin/login
-        ↓
-5. L'admin modifie les paramètres hôtel
-   - POST /api/hotel-settings (JWT requis)
-   - Sauvegarde en base de données
-   - Invalide le cache Redis
-        ↓
-6. L'admin consulte les analytics
-   - /admin/analytics
-   - Appelle : /api/analytics/overview, /api/analytics/demographics, /api/analytics/questions
+┌─────────────────────────────────────────────────────────────────┐
+│                          BROWSER (Guest)                        │
+│                                                                 │
+│   Landing Page  ──►  Hotel Chatbot Page  ──►  Chat Messages     │
+│   (hotel list)        /hotel/[id]              ↕ WebFetch       │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │  HTTP POST /api/chat
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      NEXT.JS SERVER (API Routes)                │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  POST /api/chat                                         │   │
+│  │                                                         │   │
+│  │  1. Rate limit check (in-memory sliding window)         │   │
+│  │  2. Input validation + XSS sanitization (Zod + DOMPur.) │   │
+│  │  3. Load hotel settings from DB (with 5-min cache)      │   │
+│  │  4. Fetch guest profile from DB (by sessionId)          │   │
+│  │  5. Build hotel knowledge string (RAG context)          │   │
+│  │     ├─ If guest profile exists → K-Means personalization│   │
+│  │     └─ Otherwise → standard knowledge                   │   │
+│  │  6. Extract relevant sections (keyword filter)          │   │
+│  │  7. Call Groq API (LLaMA 3.3 70B)                       │   │
+│  │  8. Append event/attraction images                      │   │
+│  │  9. Return JSON response                                │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└──────────┬──────────────────────────────────┬───────────────────┘
+           │                                  │
+           ▼                                  ▼
+┌─────────────────────┐          ┌────────────────────────────┐
+│   PostgreSQL (Neon) │          │   Groq API (External)      │
+│                     │          │                            │
+│  hotels             │          │  Model: LLaMA 3.3 70B      │
+│  facilities         │          │  max_tokens: 500           │
+│  contact_info       │          │  temperature: 0.7          │
+│  amenities          │          │                            │
+│  special_events     │          └────────────────────────────┘
+│  hotel_activities   │
+│  nearby_attractions │          ┌────────────────────────────┐
+│  guest_profiles     │          │   Open-Meteo API (free)    │
+│  question_categories│          │   Real-time weather data   │
+│  popular_topics     │          └────────────────────────────┘
+│  reservations       │
+└─────────────────────┘          ┌────────────────────────────┐
+                                 │   Redis (Upstash)          │
+                                 │   AI response cache 1h     │
+                                 │   (optional, has fallback) │
+                                 └────────────────────────────┘
 ```
 
 ---
 
-## Système de cache Redis
+## 3. Request Lifecycle — Chat Message
 
-Le cache Redis évite les requêtes répétées à la base de données et à l'IA.
+This traces exactly what happens from the moment a guest sends "What time does the pool close?" to receiving the response.
 
-| Clé Redis | Contenu | Durée |
+```
+1. BROWSER
+   User types message → POST /api/chat
+   Body: { message, hotelData, weather, conversationHistory, sessionId }
+
+2. RATE LIMITING  [lib/rate-limit-helper.ts]
+   Check: has this IP sent > 100 requests in the last 15 minutes?
+   If yes → HTTP 429 Too Many Requests
+   If no  → continue
+
+3. INPUT VALIDATION  [lib/validation.ts]
+   Zod schema validates structure (message length, types)
+   DOMPurify strips all HTML from every string field (XSS protection)
+   If invalid → HTTP 400 Bad Request
+
+4. DATABASE QUERY  [lib/db.ts → getAllHotelSettings()]
+   Check in-process cache (5-minute TTL)
+   If cache miss → 6 parallel SQL queries:
+     - SELECT from facilities
+     - SELECT from contact_info
+     - SELECT from amenities
+     - SELECT from special_events
+     - SELECT from hotel_activities
+     - SELECT from nearby_attractions
+   Assemble into a "hotel settings" object
+
+5. GUEST PROFILE LOOKUP  [lib/analytics.ts → getGuestProfile()]
+   SELECT from guest_profiles WHERE session_id = $1
+   Returns: age_range, group_type, travel_purpose, nationality
+   (Non-blocking: update interaction count in background)
+
+6. BUILD RAG CONTEXT  [lib/rag-knowledge.ts]
+   IF guest profile found:
+     → buildPersonalizedHotelKnowledge()
+       Runs K-Means clustering on guest profile
+       Returns attractions ranked by: profile affinity × weather × distance
+   ELSE:
+     → buildHotelKnowledge()
+       Returns full hotel knowledge in flat sections
+
+   Output example:
+   === CONTACT INFORMATION ===
+   Front Desk Phone: +216 XX XXX XXX
+   === FACILITIES ===
+   Pool: OPEN  Hours: 08:00 - 20:00
+   === CURRENT WEATHER ===
+   Temperature: 28°C | Conditions: Clear
+   Weather Directive: 🌤️ IDEAL WEATHER — perfect for outdoor activities
+   ...
+
+7. CONTEXT FILTERING  [lib/rag-knowledge.ts → extractRelevantContext()]
+   Match query keywords against section headers:
+   "pool" → include only FACILITIES + CONTACT sections
+   If filtered result < 250 chars → send full knowledge (safety fallback)
+
+8. CHECK REDIS CACHE  [lib/ai-service.ts]
+   If no conversation history → check cache
+   Cache key = MD5(message + context)
+   If cache hit → return cached response immediately (skip Groq call)
+
+9. CALL GROQ API  [lib/ai-service.ts → generateResponse()]
+   Messages array:
+   [
+     { role: "system", content: systemPrompt + hotelContext },
+     ...last 6 conversation turns,
+     { role: "user", content: userMessage }
+   ]
+   Model: llama-3.3-70b-versatile
+   Temp: 0.7, max_tokens: 500
+
+10. CACHE RESPONSE  [lib/ai-service.ts]
+    If no conversation history → cache AI response in Redis for 1 hour
+
+11. IMAGE INJECTION  [app/api/chat/route.ts]
+    appendEventImages(): if response mentions an event with a photo → append [IMAGE:url]
+    appendAttractionImages(): if response is > 500 chars AND is a Step-3 detail reply
+      AND mentions an attraction name → append 📸 [IMAGE:url]
+
+12. RETURN RESPONSE
+    HTTP 200: { success: true, response: "The pool closes at 8 PM..." }
+```
+
+---
+
+## 4. Frontend Architecture
+
+The chatbot page (`app/hotel/[id]/page.tsx`) is a client-side React component. Key behaviors:
+
+- **Session management**: A `sessionId` is generated at page load and sent with every chat message to track the guest across turns.
+- **Guest registration**: On first load, if no session exists, `GuestRegistrationForm` collects: age range, nationality, travel purpose, group type. This data is saved to `guest_profiles` and powers the personalized recommendation engine.
+- **Conversation history**: The last 6 turns are stored in React state and sent to the API with each message, giving the AI short-term memory.
+- **Image rendering**: The component parses `[IMAGE:url]` tags in the AI response and renders them as `<Image>` elements using Next.js `next/image`.
+- **Language detection**: The `LanguageSwitcher` component changes the UI language. The AI detects the guest's message language and responds in kind independently.
+- **Weather**: Fetched from Open-Meteo API at page load (free, no API key required), sent with every chat message.
+
+---
+
+## 5. Admin Architecture
+
+The admin dashboard (`/dashboard`) is protected by:
+1. **Middleware** (`middleware.ts`): Checks for a valid `admin_token` cookie on all `/dashboard` and `/api/admin/*` routes. Redirects to `/admin/login` if missing.
+2. **API verification** (`/api/admin/verify`): Verifies the JWT on every dashboard page load.
+
+When the admin saves hotel settings:
+1. `/api/hotel-settings` receives the new settings object.
+2. It runs `UPDATE` or `INSERT` SQL statements on all relevant tables.
+3. It calls `invalidateHotelSettingsCache()` to clear the in-process cache.
+4. Next chat request will re-load fresh settings from the database.
+
+---
+
+## 6. Performance Optimizations
+
+| Optimization | Location | Effect |
 |---|---|---|
-| `hotel:settings:all` | Tous les paramètres hôtels (JSON) | 1 heure |
-| `ai:response:{hash_MD5}` | Réponses IA en cache (questions communes) | 1 heure |
-| `session:{sessionId}` | Historique de conversation du client | 24 heures |
-| `rate_limit:{type}:{ip}` | Compteur rate limiting (sorted set Redis) | Fenêtre glissante |
-
-**Important** : Si Redis est indisponible, le système continue de fonctionner (fail open). Il charge les données directement depuis la base de données et l'IA répond sans cache.
-
----
-
-## Fichiers principaux et leurs rôles
-
-### `lib/db.ts`
-Contient le pool de connexions PostgreSQL (20 connexions max) et **toutes les requêtes SQL**. C'est le seul fichier qui parle directement à la base de données. Voir [docs/02-DATABASE.md](02-DATABASE.md) pour le détail.
-
-### `lib/rag-knowledge.ts`
-RAG = "Retrieval-Augmented Generation". Ce fichier construit un texte de contexte structuré à partir des données de l'hôtel (horaires, équipements, événements, attractions). Ce texte est injecté dans le prompt de l'IA pour qu'elle réponde avec les vraies informations de l'hôtel.
-
-### `lib/ai-service.ts`
-Appelle l'API Groq avec le modèle `llama-3.3-70b-versatile`. Deux modes :
-- `generateResponse()` : retourne la réponse complète en une fois
-- `generateResponseStream()` : retourne les mots au fur et à mesure (streaming)
-
-### `lib/analytics.ts`
-Détecte dans quel catégorie tombe chaque question client (ex: "Quelle heure ouvre la piscine ?" → catégorie "facilities") et sauvegarde en base de données pour les graphiques du dashboard.
-
-### `middleware.ts`
-S'exécute **avant** chaque requête vers `/api/*`. Ajoute des en-têtes HTTP de sécurité (CSP, X-Frame-Options, etc.). Ne touche pas à la logique métier.
-
----
-
-## Communication entre le frontend et le backend
-
-Tout passe par **HTTP standard** (pas de WebSocket). Le streaming du chat utilise **Server-Sent Events (SSE)** via `/api/chat/stream` :
-
-```
-Client                          Serveur
-  |                                |
-  |--- POST /api/chat/stream ----->|
-  |                                | ← Commence à générer avec Groq
-  |<--- data: {"chunk":"Bon"}  ----|
-  |<--- data: {"chunk":"jour"} ----|
-  |<--- data: {"chunk":"!"}    ----|
-  |<--- data: {"done":true}    ----|
-  |                                |
-```
-
-Le client lit ces événements et ajoute chaque `chunk` à la bulle de message en temps réel, donnant l'effet "l'IA écrit en direct".
+| In-process settings cache (5 min TTL) | `lib/db.ts` | Avoids 6 SQL queries per chat message |
+| Redis response cache (1 h TTL) | `lib/ai-service.ts` | Returns cached response for identical questions |
+| 6 parallel DB queries | `lib/db.ts` | Reduces DB round-trips from O(N×6) to O(1) |
+| Non-blocking analytics writes | `app/api/chat/route.ts` | Analytics never delay the AI response |
+| Context filtering | `lib/rag-knowledge.ts` | Sends smaller prompt to LLM → faster, cheaper |
+| NeonDB connection pool | `lib/db.ts` | 20 reusable connections, no reconnect overhead |

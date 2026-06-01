@@ -36,28 +36,17 @@ CREATE TABLE facilities (
     open_time TIME,
     close_time TIME,
     is_available BOOLEAN DEFAULT true,
+    treatments TEXT[] DEFAULT ARRAY[]::TEXT[],  -- spa treatment list
+    age_range TEXT,                              -- kids_club age range (e.g. "4-12")
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
-    
+
     -- Ensure unique facility per hotel
     UNIQUE(hotel_id, facility_type, facility_name)
 );
 
 CREATE INDEX idx_facilities_hotel ON facilities(hotel_id);
 CREATE INDEX idx_facilities_type ON facilities(facility_type);
-
--- ============================================
--- 3. FACILITY_ATTRIBUTES (Flexible key-value for extra data)
--- ============================================
-CREATE TABLE facility_attributes (
-    id SERIAL PRIMARY KEY,
-    facility_id INTEGER NOT NULL REFERENCES facilities(id) ON DELETE CASCADE,
-    attribute_key VARCHAR(50) NOT NULL,   -- "age_range", "treatment", "price"
-    attribute_value TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_facility_attrs ON facility_attributes(facility_id);
 
 -- ============================================
 -- 4. CONTACT_INFO TABLE (Hotel contact details)
@@ -129,7 +118,6 @@ CREATE INDEX idx_activities_category ON activities(category);
 -- ============================================
 COMMENT ON TABLE hotels IS 'Core hotel information';
 COMMENT ON TABLE facilities IS 'Hotel facilities (restaurant meals, spa, pool, gym, kids club)';
-COMMENT ON TABLE facility_attributes IS 'Flexible attributes for facilities (treatments, age ranges, etc)';
 COMMENT ON TABLE contact_info IS 'Hotel contact information';
 COMMENT ON TABLE amenities IS 'Hotel amenities (WiFi, parking, check-in/out)';
 COMMENT ON TABLE special_events IS 'Special events organized by hotels';

@@ -36,28 +36,28 @@ const hotels: Hotel[] = [
     accent: { from: '#6366F1', to: '#06B6D4', glow: 'rgba(99,102,241,0.35)', featureBg: 'rgba(99,102,241,0.12)', specialtyBg: 'rgba(6,182,212,0.15)' },
   },
   {
-    id: 'paradise-hammamet',
-    name: 'Paradise Beach Hotel',
-    location: 'Hammamet',
-    city: 'Hammamet',
-    description: 'Family-friendly paradise with pristine beaches and endless entertainment.',
-    image: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&h=600&fit=crop',
-    rating: 4.7,
-    features: ['feat_privateBeach', 'feat_waterSports', 'feat_familyActivities', 'feat_allInclusive'],
-    specialties: ['spec_familyEntertainment', 'spec_waterActivities', 'spec_kidsPrograms'],
-    accent: { from: '#10B981', to: '#34D399', glow: 'rgba(16,185,129,0.35)', featureBg: 'rgba(16,185,129,0.12)', specialtyBg: 'rgba(52,211,153,0.15)' },
+    id: 'villa-didon-carthage',
+    name: 'Villa Didon',
+    location: 'Carthage',
+    city: 'Carthage',
+    description: 'Exclusive 5-star boutique hotel on Byrsa Hill with panoramic views over the Gulf of Tunis and the UNESCO Carthage ruins on the doorstep.',
+    image: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&h=600&fit=crop',
+    rating: 5.0,
+    features: ['feat_historicLocation', 'feat_luxurySpa', 'feat_fineDining', 'feat_culturalTours'],
+    specialties: ['spec_historicMedina', 'spec_premiumService', 'spec_localExperiences'],
+    accent: { from: '#7C3AED', to: '#A855F7', glow: 'rgba(124,58,237,0.35)', featureBg: 'rgba(124,58,237,0.12)', specialtyBg: 'rgba(168,85,247,0.15)' },
   },
   {
-    id: 'movenpick-sousse',
-    name: 'Mövenpick Sousse',
-    location: 'Sousse',
-    city: 'Sousse',
-    description: 'Premium resort in historic Sousse with cultural experiences and luxury amenities.',
-    image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&h=600&fit=crop',
-    rating: 4.8,
-    features: ['feat_historicLocation', 'feat_luxurySpa', 'feat_fineDining', 'feat_culturalTours'],
-    specialties: ['spec_historicMedina', 'spec_localExperiences', 'spec_premiumService'],
-    accent: { from: '#F59E0B', to: '#F97316', glow: 'rgba(245,158,11,0.35)', featureBg: 'rgba(245,158,11,0.12)', specialtyBg: 'rgba(249,115,22,0.15)' },
+    id: 'belvedere-fourati-tunis',
+    name: 'Hôtel Belvédère Fourati',
+    location: 'Tunis',
+    city: 'Tunis',
+    description: '4-star hotel 100 m from Belvédère Park in central Tunis — ideal for business and leisure, with free parking and fast access to the Medina and Carthage.',
+    image: 'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=800&h=600&fit=crop',
+    rating: 4.3,
+    features: ['feat_historicLocation', 'feat_multipleRestaurants', 'feat_spaWellness', 'feat_culturalTours'],
+    specialties: ['spec_culturalActivities', 'spec_localExperiences', 'spec_traditionalArch'],
+    accent: { from: '#0EA5E9', to: '#38BDF8', glow: 'rgba(14,165,233,0.35)', featureBg: 'rgba(14,165,233,0.12)', specialtyBg: 'rgba(56,189,248,0.15)' },
   },
 ]
 
@@ -340,7 +340,7 @@ export default function HomePage() {
                     />
                   </div>
 
-                  <p className="text-sm text-gray-400 leading-relaxed mb-4">{hotel.description}</p>
+                  <p className="text-sm text-gray-400 leading-relaxed mb-4">{t(`hotel_${hotel.id}_desc`)}</p>
 
                   {/* Features */}
                   <div className="mb-3">

@@ -43,14 +43,16 @@ export interface Attraction {
   estimated_duration?: string
   price_range?: string
   transportation?: string
+  image_url?: string
   [key: string]: any
 }
 
 export interface RankedAttraction extends Attraction {
-  cluster_score: number       // 0–100 affinity score
-  weather_suitable: boolean   // safe to visit in current weather
-  cluster_label: string       // human-readable persona name
+  cluster_score: number         // 0–100 affinity score
+  weather_suitable: boolean     // safe to visit in current weather
+  cluster_label: string         // human-readable persona name
   rank: number
+  recommendation_reason: string // plain-language explanation for the AI to quote
 }
 
 // ─── Step 1 — Feature Encoding ────────────────────────────────────────────────
@@ -300,6 +302,85 @@ function distancePenalty(distStr?: string): number {
   return 0.55
 }
 
+// ─── Step 4b — Recommendation Reason Builder ─────────────────────────────────
+// Creates a plain-language explanation the AI can quote directly to the guest.
+// Three dimensions are always mentioned: profile match, weather fit, distance.
+
+function describeWeatherFit(category: string, weather: ClusteringWeather): string {
+  const cat = category.toLowerCase()
+  const isOutdoor = OUTDOOR_CATEGORIES.has(cat)
+  const isIndoor  = INDOOR_CATEGORIES.has(cat)
+
+  if (weather.isRainy) {
+    if (isIndoor)  return 'ideal for today\'s rainy weather'
+    if (isOutdoor) return 'best enjoyed on a dry day — rain today'
+    return 'suitable despite the rain'
+  }
+  if (weather.isWindy) {
+    if (isIndoor)  return 'sheltered from today\'s wind'
+    if (isOutdoor) return 'open-air — wind may affect comfort today'
+    return 'accessible in today\'s conditions'
+  }
+  if (weather.temperature >= 35) {
+    if (isIndoor)  return 'a cool refuge from the heat today'
+    if (isOutdoor) return 'great in the heat if you stay hydrated'
+    return 'comfortable in today\'s warm weather'
+  }
+  if (weather.temperature >= 22) {
+    if (isOutdoor) return 'perfect in today\'s beautiful weather'
+    if (isIndoor)  return 'enjoyable in any weather'
+    return 'great conditions today'
+  }
+  // Cool
+  if (isIndoor)  return 'a warm, sheltered option on this cool day'
+  if (isOutdoor) return 'refreshing in the cooler air today'
+  return 'suitable for today\'s conditions'
+}
+
+function describeDistance(distStr?: string): string {
+  const km = parseDistanceKm(distStr)
+  if (km === null) return 'distance not specified'
+  if (km <= 0.5)  return `just ${distStr ?? 'a short walk'} away`
+  if (km <= 2)    return `${distStr ?? 'nearby'} — easy walk or short taxi`
+  if (km <= 5)    return `${distStr ?? 'a few km'} — short taxi ride`
+  if (km <= 15)   return `${distStr ?? 'some distance'} — quick drive`
+  return `${distStr ?? 'further away'} — day-trip territory`
+}
+
+function buildRecommendationReason(
+  attraction: Attraction,
+  centroid: Centroid,
+  weather: ClusteringWeather,
+  score: number,
+  profile: ClusteringGuestProfile
+): string {
+  const cat = (attraction.category ?? 'activity').toLowerCase()
+  const profileLabel = centroid.label          // e.g. "Family Explorer"
+  const weatherFit   = describeWeatherFit(cat, weather)
+  const distanceFit  = describeDistance(attraction.distance)
+
+  // Profile-specific phrasing
+  const profileReason = (() => {
+    const groupMap: Record<string, string> = {
+      solo:    'solo travellers',
+      couple:  'couples',
+      family:  'families',
+      group:   'groups',
+    }
+    const purposeMap: Record<string, string> = {
+      leisure:   'leisure',
+      business:  'business travel',
+      family:    'family trips',
+      honeymoon: 'romantic getaways',
+    }
+    const g = groupMap[profile.groupType]    ?? profile.groupType
+    const p = purposeMap[profile.travelPurpose] ?? profile.travelPurpose
+    return `fits ${g} on a ${p} (${profileLabel} profile, ${score}% match)`
+  })()
+
+  return `${profileReason} • ${weatherFit} • ${distanceFit}`
+}
+
 // ─── Step 5 — Score & Rank Attractions ───────────────────────────────────────
 
 /**
@@ -327,13 +408,15 @@ export function rankAttractions(
     const wMod  = weatherModifier(cat, weather)
     const dPen  = distancePenalty(attr.distance)
     const rawScore = baseAffinity * wMod * dPen
+    const score = Math.min(100, Math.round(rawScore * 100))
 
     return {
       ...attr,
-      cluster_score: Math.min(100, Math.round(rawScore * 100)),
+      cluster_score: score,
       weather_suitable: wMod >= 0.6,
       cluster_label: centroid.label,
       rank: 0,  // assigned below
+      recommendation_reason: buildRecommendationReason(attr, centroid, weather, score, profile),
     }
   })
 
@@ -365,6 +448,41 @@ export function rankAttractions(
  * @param weather      Current conditions
  * @param highlightN   Number of top picks to flag as recommended (default 3)
  */
+// ─── Weather directive builder ────────────────────────────────────────────────
+// Produces a one-line directive the AI follows when recommending attractions.
+
+function weatherDirective(weather: ClusteringWeather): string {
+  const temp = weather.temperature
+  const desc = weather.description ?? ''
+
+  if (weather.isRainy) {
+    return `⛈️  WEATHER TODAY: ${desc}, ${temp}°C — RAINY → prioritise INDOOR attractions (cafés, museums, cultural sites, restaurants). Gently discourage outdoor / nature / adventure picks.`
+  }
+  if (weather.isWindy) {
+    return `💨  WEATHER TODAY: ${desc}, ${temp}°C — WINDY → prefer sheltered / indoor options. Open-air sites are accessible but mention the wind.`
+  }
+  if (temp >= 35) {
+    return `☀️  WEATHER TODAY: ${desc}, ${temp}°C — VERY HOT → recommend early-morning or late-evening outdoor visits; highlight air-conditioned indoor venues as cool alternatives.`
+  }
+  if (temp >= 22) {
+    return `🌤️  WEATHER TODAY: ${desc}, ${temp}°C — IDEAL OUTDOOR CONDITIONS → prioritise nature, adventure, and open-air cultural sites. All categories are suitable.`
+  }
+  // Cool
+  return `🌥️  WEATHER TODAY: ${desc}, ${temp}°C — COOL → indoor cafés, restaurants, and cultural sites are especially appealing. Outdoor visits are fine but dress warmly.`
+}
+
+// ─── Guest profile summary ────────────────────────────────────────────────────
+
+function guestProfileSummary(profile: ClusteringGuestProfile, centroid: Centroid): string {
+  const groupLabels: Record<string, string> = {
+    solo: 'solo traveller', couple: 'couple', family: 'family', group: 'group',
+  }
+  const purposeLabels: Record<string, string> = {
+    leisure: 'leisure trip', business: 'business trip', family: 'family trip', honeymoon: 'honeymoon',
+  }
+  return `Guest: ${profile.ageRange} years old • ${groupLabels[profile.groupType] ?? profile.groupType} • ${purposeLabels[profile.travelPurpose] ?? profile.travelPurpose} → assigned to "${centroid.label}" cluster`
+}
+
 export function buildClusteredAttractionsContext(
   attractions: Attraction[],
   profile: ClusteringGuestProfile,
@@ -383,36 +501,51 @@ export function buildClusteredAttractionsContext(
 
   const lines: string[] = []
   lines.push(`=== NEARBY ATTRACTIONS ===`)
-  lines.push(`Guest Persona (K-Means cluster): ${centroid.label}`)
-  lines.push(`RULE: You have the COMPLETE list of all available attractions below.`)
-  lines.push(`When a guest asks for a SPECIFIC type (café, restaurant, nature, etc.), look through ALL sections and answer accurately.`)
-  lines.push(`Never say you don't have information about a type if it appears in this list.`)
+
+  // ── Guest profile ──────────────────────────────────────────────────────────
+  lines.push(guestProfileSummary(profile, centroid))
+
+  // ── Weather directive ──────────────────────────────────────────────────────
+  lines.push(weatherDirective(weather))
+  lines.push('')
+
+  // ── AI instructions ────────────────────────────────────────────────────────
+  lines.push(`AI INSTRUCTION — HOW TO RECOMMEND ATTRACTIONS:`)
+  lines.push(`1. Lead with the ★ TOP PICKS when a guest asks for recommendations or "things to do".`)
+  lines.push(`2. For each attraction you mention, include ONE sentence explaining WHY it suits this guest. Use the "Why recommended" line provided for each attraction.`)
+  lines.push(`3. Follow the weather directive above: in rainy weather emphasise indoor picks; in perfect weather highlight outdoor ones.`)
+  lines.push(`4. When a guest asks for a SPECIFIC type (café, beach, museum, etc.), search ALL sections — not just the top picks.`)
+  lines.push(`5. NEVER invent attractions. Every place you mention must appear in this list.`)
   lines.push('')
 
   // ── Top picks section ──────────────────────────────────────────────────────
-  lines.push(`★ TOP PICKS FOR YOUR PROFILE (${centroid.label}):`)
+  lines.push(`★ TOP PICKS FOR THIS GUEST (${centroid.label} — ranked by profile + weather + distance):`)
   topPicks.forEach((a) => {
-    const weatherTag = a.weather_suitable ? '[Good for today\'s weather]' : '[Better on another day]'
-    lines.push(`  • ${a.attraction_name} — ${a.category} — Match: ${a.cluster_score}% ${weatherTag}`)
-    if (a.description)         lines.push(`    ${a.description}`)
-    if (a.distance)            lines.push(`    Distance: ${a.distance}`)
-    if (a.estimated_duration)  lines.push(`    Duration: ${a.estimated_duration}`)
-    if (a.price_range)         lines.push(`    Price: ${a.price_range}`)
-    if (a.transportation)      lines.push(`    Transport: ${a.transportation}`)
+    const weatherIcon = a.weather_suitable ? '✅' : '⚠️'
+    lines.push(`  ${weatherIcon} #${a.rank} ${a.attraction_name} [${a.category}] — Match: ${a.cluster_score}%`)
+    lines.push(`     Why recommended: ${a.recommendation_reason}`)
+    if (a.description)         lines.push(`     About: ${a.description}`)
+    if (a.distance)            lines.push(`     Distance: ${a.distance}`)
+    if (a.estimated_duration)  lines.push(`     Duration: ${a.estimated_duration}`)
+    if (a.price_range)         lines.push(`     Price: ${a.price_range}`)
+    if (a.transportation)      lines.push(`     Transport: ${a.transportation}`)
+    if (a.image_url)           lines.push(`     Photo: ${a.image_url}`)
     lines.push('')
   })
 
   // ── All other available attractions ───────────────────────────────────────
   if (rest.length > 0) {
-    lines.push(`ALL OTHER AVAILABLE ATTRACTIONS (use these when a guest asks for a specific type):`)
+    lines.push(`OTHER AVAILABLE ATTRACTIONS (answer ANY specific request using these):`)
     rest.forEach((a) => {
-      const weatherTag = a.weather_suitable ? '[Good for today]' : '[Better another day]'
-      lines.push(`  • ${a.attraction_name} — ${a.category} — Match: ${a.cluster_score}% ${weatherTag}`)
-      if (a.description)         lines.push(`    ${a.description}`)
-      if (a.distance)            lines.push(`    Distance: ${a.distance}`)
-      if (a.estimated_duration)  lines.push(`    Duration: ${a.estimated_duration}`)
-      if (a.price_range)         lines.push(`    Price: ${a.price_range}`)
-      if (a.transportation)      lines.push(`    Transport: ${a.transportation}`)
+      const weatherIcon = a.weather_suitable ? '✅' : '⚠️'
+      lines.push(`  ${weatherIcon} ${a.attraction_name} [${a.category}] — Match: ${a.cluster_score}%`)
+      lines.push(`     Why: ${a.recommendation_reason}`)
+      if (a.description)         lines.push(`     About: ${a.description}`)
+      if (a.distance)            lines.push(`     Distance: ${a.distance}`)
+      if (a.estimated_duration)  lines.push(`     Duration: ${a.estimated_duration}`)
+      if (a.price_range)         lines.push(`     Price: ${a.price_range}`)
+      if (a.transportation)      lines.push(`     Transport: ${a.transportation}`)
+      if (a.image_url)           lines.push(`     Photo: ${a.image_url}`)
       lines.push('')
     })
   }

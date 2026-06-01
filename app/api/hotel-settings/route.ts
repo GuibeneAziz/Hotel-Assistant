@@ -72,6 +72,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Coerce empty strings to null so PostgreSQL `time` columns never receive ''
+    const t = (v: string | undefined | null) => (v && v.trim() !== '' ? v : null)
+
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -80,44 +83,46 @@ export async function POST(request: NextRequest) {
       if (settings.restaurant) {
         for (const [mealType, mealData] of Object.entries(settings.restaurant)) {
           const meal = mealData as { available: boolean; start: string; end: string }
+          // Skip if times are empty (no row in DB for this meal)
+          if (!t(meal.start) && !t(meal.end)) continue
           await client.query(`
             UPDATE facilities
             SET is_available = $1, open_time = $2, close_time = $3
             WHERE hotel_id = $4 AND facility_type = 'restaurant' AND facility_name = $5
-          `, [meal.available, meal.start, meal.end, hotelId, mealType])
+          `, [meal.available, t(meal.start), t(meal.end), hotelId, mealType])
         }
       }
 
       // Update spa
-      if (settings.spa) {
+      if (settings.spa && (t(settings.spa.openTime) || t(settings.spa.closeTime))) {
         await client.query(`
           UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
           WHERE hotel_id = $4 AND facility_type = 'spa'
-        `, [settings.spa.available, settings.spa.openTime, settings.spa.closeTime, hotelId])
+        `, [settings.spa.available, t(settings.spa.openTime), t(settings.spa.closeTime), hotelId])
       }
 
       // Update pool
-      if (settings.pool) {
+      if (settings.pool && (t(settings.pool.openTime) || t(settings.pool.closeTime))) {
         await client.query(`
           UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
           WHERE hotel_id = $4 AND facility_type = 'pool'
-        `, [settings.pool.available, settings.pool.openTime, settings.pool.closeTime, hotelId])
+        `, [settings.pool.available, t(settings.pool.openTime), t(settings.pool.closeTime), hotelId])
       }
 
       // Update gym
-      if (settings.gym) {
+      if (settings.gym && (t(settings.gym.openTime) || t(settings.gym.closeTime))) {
         await client.query(`
           UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
           WHERE hotel_id = $4 AND facility_type = 'gym'
-        `, [settings.gym.available, settings.gym.openTime, settings.gym.closeTime, hotelId])
+        `, [settings.gym.available, t(settings.gym.openTime), t(settings.gym.closeTime), hotelId])
       }
 
-      // Update kids club
-      if (settings.kidsClub) {
+      // Update kids club (only if a row actually exists in DB)
+      if (settings.kidsClub && (t(settings.kidsClub.openTime) || t(settings.kidsClub.closeTime))) {
         await client.query(`
           UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
           WHERE hotel_id = $4 AND facility_type = 'kids_club'
-        `, [settings.kidsClub.available, settings.kidsClub.openTime, settings.kidsClub.closeTime, hotelId])
+        `, [settings.kidsClub.available, t(settings.kidsClub.openTime), t(settings.kidsClub.closeTime), hotelId])
       }
 
       // Sync special events: delete all then re-insert
@@ -133,7 +138,7 @@ export async function POST(request: NextRequest) {
             event.title,
             event.description || null,
             event.date,
-            event.time || '00:00',
+            t(event.time) ?? '00:00',
             event.location || null,
             event.price || null,
             event.imageUrl || null,

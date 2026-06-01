@@ -1,222 +1,135 @@
-// Rate Limiting System
-// OWASP: Implement rate limiting to prevent abuse and DDoS attacks
-
-import Redis from 'ioredis'
-
-interface RateLimitConfig {
-  windowMs: number        // Time window in milliseconds
-  maxRequests: number     // Maximum requests per window
-  keyPrefix: string       // Redis key prefix
-  skipFailedRequests?: boolean
-  skipSuccessfulRequests?: boolean
-}
+/**
+ * In-memory sliding-window rate limiter.
+ *
+ * No Redis required — works in any Node.js / Next.js environment.
+ * Counters are per-process and reset on server restart, which is
+ * perfectly acceptable for a hotel assistant application.
+ *
+ * The public interface is identical to the old Redis-backed version
+ * so every caller continues to work without modification.
+ */
 
 export interface RateLimitResult {
   success: boolean
   limit: number
   remaining: number
   resetTime: Date
-  retryAfter?: number  // Seconds until reset
+  retryAfter?: number
 }
 
-/**
- * Rate Limiter using Redis with sliding window algorithm
- * OWASP: Rate limiting is essential for preventing abuse
- */
+interface Window {
+  timestamps: number[]
+  windowMs: number
+  maxRequests: number
+}
+
 export class RateLimiter {
-  private config: RateLimitConfig
-  private redis: Redis | null = null
-  private redisAvailable: boolean = true
+  private readonly windowMs: number
+  private readonly maxRequests: number
+  private readonly store = new Map<string, Window>()
 
-  constructor(config: RateLimitConfig) {
-    this.config = config
-    
-    // Initialize Redis connection
-    try {
-      if (process.env.REDIS_URL) {
-        this.redis = new Redis(process.env.REDIS_URL, {
-          maxRetriesPerRequest: 3,
-          retryStrategy: (times) => {
-            if (times > 3) {
-              this.redisAvailable = false
-              console.warn('⚠️  Redis unavailable - rate limiting disabled')
-              return null
-            }
-            return Math.min(times * 100, 3000)
-          }
-        })
-      }
-    } catch (error) {
-      console.error('Failed to initialize Redis for rate limiting:', error)
-      this.redisAvailable = false
+  // Housekeeping: remove stale keys every 5 minutes to prevent memory leaks
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null
+
+  constructor(config: { windowMs: number; maxRequests: number; keyPrefix?: string }) {
+    this.windowMs = config.windowMs
+    this.maxRequests = config.maxRequests
+
+    if (typeof setInterval !== 'undefined') {
+      this.cleanupTimer = setInterval(() => this.cleanup(), 5 * 60 * 1000)
+      // Allow Node.js to exit even if this timer is running
+      if (this.cleanupTimer?.unref) this.cleanupTimer.unref()
     }
   }
 
-  /**
-   * Check if request is within rate limit
-   * Uses sliding window algorithm for accurate rate limiting
-   * @param identifier - Unique identifier (usually IP address)
-   * @returns Rate limit result
-   */
   async checkLimit(identifier: string): Promise<RateLimitResult> {
-    // If Redis is unavailable, allow request (fail open)
-    if (!this.redis || !this.redisAvailable) {
-      return {
-        success: true,
-        limit: this.config.maxRequests,
-        remaining: this.config.maxRequests,
-        resetTime: new Date(Date.now() + this.config.windowMs)
-      }
-    }
-
-    const key = `${this.config.keyPrefix}:${identifier}`
     const now = Date.now()
-    const windowStart = now - this.config.windowMs
+    const windowStart = now - this.windowMs
 
-    try {
-      // Use Redis pipeline for atomic operations
-      const pipeline = this.redis.pipeline()
-      
-      // Remove old entries outside the window
-      pipeline.zremrangebyscore(key, 0, windowStart)
-      
-      // Count requests in current window
-      pipeline.zcard(key)
-      
-      // Add current request
-      pipeline.zadd(key, now, `${now}`)
-      
-      // Set expiration
-      pipeline.expire(key, Math.ceil(this.config.windowMs / 1000))
-      
-      const results = await pipeline.exec()
-      
-      if (!results) {
-        throw new Error('Pipeline execution failed')
-      }
+    let window = this.store.get(identifier)
+    if (!window) {
+      window = { timestamps: [], windowMs: this.windowMs, maxRequests: this.maxRequests }
+      this.store.set(identifier, window)
+    }
 
-      // Get count before adding current request
-      const count = (results[1][1] as number) || 0
-      const remaining = Math.max(0, this.config.maxRequests - count - 1)
-      const resetTime = new Date(now + this.config.windowMs)
+    // Evict timestamps outside the current window
+    window.timestamps = window.timestamps.filter(t => t > windowStart)
 
-      if (count >= this.config.maxRequests) {
-        // Rate limit exceeded
-        return {
-          success: false,
-          limit: this.config.maxRequests,
-          remaining: 0,
-          resetTime,
-          retryAfter: Math.ceil(this.config.windowMs / 1000)
-        }
-      }
+    const count = window.timestamps.length
+    const resetTime = new Date(now + this.windowMs)
 
-      // Within rate limit
+    if (count >= this.maxRequests) {
       return {
-        success: true,
-        limit: this.config.maxRequests,
-        remaining,
-        resetTime
+        success: false,
+        limit: this.maxRequests,
+        remaining: 0,
+        resetTime,
+        retryAfter: Math.ceil(this.windowMs / 1000),
       }
-    } catch (error) {
-      console.error('Rate limiter error:', error)
-      // On error, fail open (allow request)
-      return {
-        success: true,
-        limit: this.config.maxRequests,
-        remaining: this.config.maxRequests,
-        resetTime: new Date(now + this.config.windowMs)
-      }
+    }
+
+    window.timestamps.push(now)
+
+    return {
+      success: true,
+      limit: this.maxRequests,
+      remaining: this.maxRequests - window.timestamps.length,
+      resetTime,
     }
   }
 
-  /**
-   * Reset rate limit for an identifier
-   * Useful for testing or manual intervention
-   * @param identifier - Identifier to reset
-   */
   async resetLimit(identifier: string): Promise<void> {
-    if (!this.redis || !this.redisAvailable) return
-
-    const key = `${this.config.keyPrefix}:${identifier}`
-    try {
-      await this.redis.del(key)
-    } catch (error) {
-      console.error('Failed to reset rate limit:', error)
-    }
+    this.store.delete(identifier)
   }
 
-  /**
-   * Close Redis connection
-   */
   async close(): Promise<void> {
-    if (this.redis) {
-      await this.redis.quit()
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer)
+    this.store.clear()
+  }
+
+  private cleanup() {
+    const now = Date.now()
+    for (const [key, window] of this.store) {
+      window.timestamps = window.timestamps.filter(t => t > now - window.windowMs)
+      if (window.timestamps.length === 0) this.store.delete(key)
     }
   }
 }
 
-// Predefined rate limiters for different endpoints
-// OWASP: Different endpoints should have different rate limits based on sensitivity
+// ─── Pre-built limiters (same names as before) ────────────────────────────────
 
-/**
- * Rate limiter for chat endpoint
- * 100 requests per 15 minutes per IP
- */
+/** Chat endpoint — 100 requests / 15 min per IP */
 export const chatRateLimiter = new RateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   maxRequests: 100,
-  keyPrefix: 'ratelimit:chat'
+  keyPrefix: 'ratelimit:chat',
 })
 
-/**
- * Rate limiter for authentication endpoints
- * 5 attempts per 15 minutes per IP (strict for security)
- */
+/** Auth endpoints — 5 attempts / 15 min per IP */
 export const authRateLimiter = new RateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   maxRequests: 5,
-  keyPrefix: 'ratelimit:auth'
+  keyPrefix: 'ratelimit:auth',
 })
 
-/**
- * Rate limiter for general API endpoints
- * 50 requests per 15 minutes per IP
- */
+/** General API — 50 requests / 15 min per IP */
 export const apiRateLimiter = new RateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   maxRequests: 50,
-  keyPrefix: 'ratelimit:api'
+  keyPrefix: 'ratelimit:api',
 })
 
-/**
- * Rate limiter for admin/analytics endpoints
- * 30 requests per 15 minutes per IP
- */
+/** Admin / analytics — 30 requests / 15 min per IP */
 export const adminRateLimiter = new RateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   maxRequests: 30,
-  keyPrefix: 'ratelimit:admin'
+  keyPrefix: 'ratelimit:admin',
 })
 
-/**
- * Helper function to get client IP from request
- * Handles various proxy headers
- */
+/** Extract client IP from a request, honouring proxy headers */
 export function getClientIp(request: Request): string {
   const headers = request.headers
-  
-  // Check common proxy headers
   const forwarded = headers.get('x-forwarded-for')
-  if (forwarded) {
-    return forwarded.split(',')[0].trim()
-  }
-  
-  const realIp = headers.get('x-real-ip')
-  if (realIp) {
-    return realIp
-  }
-  
-  // Fallback to a default (not ideal, but prevents errors)
-  return 'unknown'
+  if (forwarded) return forwarded.split(',')[0].trim()
+  return headers.get('x-real-ip') ?? 'unknown'
 }
