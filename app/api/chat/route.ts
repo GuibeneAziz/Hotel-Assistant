@@ -77,7 +77,20 @@ export async function POST(request: Request) {
           }).catch(() => {/* ignore */})
 
           if (guestProfile.hotel_id) {
-            trackAnalytics(message, guestProfile.hotel_id, guestProfile.age_range).catch(() => {/* ignore */})
+            trackAnalytics(message, guestProfile.hotel_id, guestProfile.age_range)
+              .then((detectedLang) => {
+                // Persist the detected language back to the guest profile
+                createOrUpdateGuestProfile({
+                  sessionId: guestProfile.session_id,
+                  hotelId: guestProfile.hotel_id,
+                  ageRange: guestProfile.age_range,
+                  nationality: guestProfile.nationality,
+                  travelPurpose: guestProfile.travel_purpose,
+                  groupType: guestProfile.group_type,
+                  preferredLanguage: detectedLang,
+                }).catch(() => {/* ignore */})
+              })
+              .catch(() => {/* ignore */})
           }
         }
       } catch (analyticsError) {
@@ -144,12 +157,8 @@ export async function POST(request: Request) {
 
     // Append event images if the response mentions an event that has a photo
     const withEventImages = appendEventImages(aiResponse, hotelSettings?.specialEvents || [])
-    // Append photos for Step-2 attraction shortlists so each option has visual context
-    const withShortlistImages = appendShortlistAttractionImages(withEventImages, hotelSettings?.nearbyAttractions || [])
-    // Append attraction photo when the AI gives detailed info about a specific attraction
-    const withAttractionImages = appendAttractionImages(withShortlistImages, hotelSettings?.nearbyAttractions || [])
-    // Append map tag for the same Step-3 detailed responses
-    const finalResponse = appendMapTag(withAttractionImages, hotelSettings?.nearbyAttractions || [])
+    // Attach attraction photos + map based on how many attractions the reply mentions
+    const finalResponse = appendAttractionMedia(withEventImages, hotelSettings?.nearbyAttractions || [])
 
     return NextResponse.json<ChatResponse>({ 
       success: true,
@@ -180,21 +189,18 @@ export async function POST(request: Request) {
   }
 }
 
-// Analytics tracking helper
-async function trackAnalytics(message: string, hotelId: string, ageRange?: string) {
-  // Detect question category and language
+// Analytics tracking helper — also returns detected language for profile update
+async function trackAnalytics(
+  message: string,
+  hotelId: string,
+  ageRange?: string
+): Promise<string> {
   const { category, subcategory, topics, language } = detectQuestionCategory(message)
-  
-  // Track question category
   await trackQuestionCategory(hotelId, category, subcategory, ageRange)
-  
-  // Track popular topics
   for (const topic of topics) {
     await trackPopularTopic(hotelId, topic)
   }
-  
-  // Log detected language for monitoring
-  console.log(`📊 Analytics: category=${category}, language=${language}`)
+  return language
 }
 
 function getSignificantWords(value: string): string[] {
@@ -293,98 +299,46 @@ export async function GET() {
   }
 }
 
-function isAttractionShortlistResponse(response: string): boolean {
-  const lower = response.toLowerCase()
-  return (
-    lower.includes('which one would you like') ||
-    lower.includes('which would you like to know more') ||
-    lower.includes('which would you prefer')
-  )
-}
-
 function buildImageTag(attraction: any): string {
   return `[IMAGE:${attraction.attraction_name}|${attraction.image_url}]`
 }
 
-/**
- * Append one labelled image per mentioned attraction when the AI gives a Step-2
- * shortlist. This makes each option feel visual without asking the model to
- * invent image URLs.
- */
-function appendShortlistAttractionImages(response: string, attractions: any[]): string {
-  if (!isAttractionShortlistResponse(response)) return response
-  if (response.includes('[IMAGE:')) return response
-
-  const withImages = attractions.filter((a: any) => a.image_url)
-  const mentioned = findMentionedAttractions(response, withImages, 3)
-  if (mentioned.length === 0) return response
-
-  const imageTags = mentioned.map(buildImageTag).join('\n')
-  return response + '\n\n' + imageTags
-}
-
-/**
- * Append a labelled [IMAGE:name|url] block when the AI gives a DETAILED (Step 3)
- * response about one specific attraction.
- *
- * Rules to avoid false-positives on shortlists / question replies:
- *  - Response must be at least 500 chars (a shortlist with 3 × 3-line items is
- *    ~350–420 chars; a full Step-3 detail reply is 500+).
- *  - Response must NOT end with "Which one would you like to know more about?"
- *    (that phrase marks a Step-2 shortlist).
- *  - Only the first matching attraction image is appended.
- */
-function appendAttractionImages(response: string, attractions: any[]): string {
-  if (response.includes('[IMAGE:')) return response
-  if (response.length < 500) return response
-  // If it looks like a Step-2 shortlist, skip
-  if (isAttractionShortlistResponse(response)) return response
-
-  const withImages = attractions.filter((a: any) => a.image_url)
-  if (withImages.length === 0) return response
-
-  const attraction = findBestMentionedAttraction(response, withImages)
-  return attraction
-    ? response + '\n\n' + buildImageTag(attraction)
-    : response
-}
-
-/**
- * Append a [MAP:name|lat|lon] or [MAP:name] tag whenever the response talks
- * about a specific attraction (directions, details, distance, etc.).
- *
- * Blocked only when the response is a Step-2 multi-option shortlist
- * (i.e. it offers several choices and asks the user to pick one).
- */
-function appendMapTag(response: string, attractions: any[]): string {
-  const lower = response.toLowerCase()
-  // Short responses are almost always clarifying questions or acknowledgements — skip
-  if (response.length < 300 && !lower.includes('here are the details for')) return response
-
-  // Phrases that mark Step-1 (clarifying questions) or Step-2 (shortlists) — skip map
-  const skipPhrases = [
-    'which one would you like',
-    'which would you like to know more',
-    'which would you prefer',
-    'would you like more details about',
-    'which of these',
-    'are you looking for',
-    'what kind of',
-    'what type of',
-    'do you prefer',
-    'could you tell me',
-    'can you tell me',
-    'would you like me to',
-  ]
-  if (skipPhrases.some((p) => lower.includes(p))) return response
-
-  const attraction = findBestMentionedAttraction(response, attractions)
-  if (!attraction) return response
-
-  const tag = (attraction.latitude && attraction.longitude)
+function buildMapTag(attraction: any): string {
+  return (attraction.latitude && attraction.longitude)
     ? `[MAP:${attraction.attraction_name}|${attraction.latitude}|${attraction.longitude}]`
     : `[MAP:${attraction.attraction_name}]`
-  return response + '\n' + tag
+}
+
+/**
+ * Attach attraction photos and a map card based on HOW MANY attractions the
+ * reply talks about — this is far more robust than matching exact phrases,
+ * which broke when the model reworded its shortlist question.
+ *
+ *  - 0 attractions mentioned  → Step-1 clarifying question / generic answer: nothing.
+ *  - 2+ attractions mentioned → Step-2 shortlist: one labelled photo per option, NO map.
+ *  - exactly 1 attraction     → Step-3 detail: one labelled photo + a map card.
+ */
+function appendAttractionMedia(response: string, attractions: any[]): string {
+  if (response.includes('[IMAGE:') || response.includes('[MAP:')) return response
+
+  const mentioned = findMentionedAttractions(response, attractions, 4)
+  if (mentioned.length === 0) return response
+
+  // Step-2 shortlist: several options listed, the guest hasn't chosen yet
+  if (mentioned.length >= 2) {
+    const photos = mentioned
+      .filter((a: any) => a.image_url)
+      .slice(0, 3)
+      .map(buildImageTag)
+    return photos.length > 0 ? response + '\n\n' + photos.join('\n') : response
+  }
+
+  // Step-3 detail: exactly one attraction in focus → photo + directions
+  const attraction = mentioned[0]
+  let out = response
+  if (attraction.image_url) out += '\n\n' + buildImageTag(attraction)
+  out += '\n' + buildMapTag(attraction)
+  return out
 }
 
 // Append [IMAGE:url] tags for events mentioned in the AI response that have photos

@@ -1,0 +1,249 @@
+@startuml
+' Domain model: types, services, React components
+skinparam classAttributeIconSize 0
+
+' --- Guest / Analytics ---
+interface AnalyticsGuestProfile {
+  +sessionId: string
+  +hotelId: string
+  +ageRange: string
+  +nationality: string
+  +travelPurpose: string
+  +groupType: string
+  +preferredLanguage?: string
+}
+
+interface ClusteringGuestProfile {
+  +ageRange: string
+  +groupType: string
+  +travelPurpose: string
+}
+
+interface ClusteringWeather {
+  +temperature: number
+  +isRainy: boolean
+  +isWindy: boolean
+  +description?: string
+}
+
+interface Attraction {
+  +attraction_name: string
+  +category: string
+  +description?: string
+  +distance?: string
+  +estimated_duration?: string
+  +price_range?: string
+  +transportation?: string
+  +image_url?: string
+}
+
+interface RankedAttraction {
+  +cluster_score: number
+  +weather_suitable: boolean
+  +cluster_label: string
+  +rank: number
+  +recommendation_reason: string
+}
+
+interface Centroid {
+  +id: number
+  +label: string
+  +point: number[]
+  +categoryWeights: Map
+  +prefersOutdoor: boolean
+}
+
+' --- Session state & messages ---
+interface Message {
+  +role: string
+  +content: string
+}
+
+interface SessionState {
+  +sessionId: string
+  +hotelId: string
+  +conversationHistory: Message[]
+  +guestProfile: AnalyticsGuestProfile | null
+  +createdAt: number
+  +lastActivity: number
+}
+
+class SessionStateManager <<service>> {
+  +getState(sessionId): SessionState | null
+  +setState(state): void
+  +updateHistory(sessionId, message): void
+  +createState(sessionId, hotelId, guestProfile?): SessionState
+  +deleteState(sessionId): void
+  +sessionExists(sessionId): boolean
+  +getOrCreateState(sessionId, hotelId, guestProfile?): SessionState
+  +updateGuestProfile(sessionId, guestProfile): void
+  +getSessionTTL(sessionId): number
+  +extendSession(sessionId): void
+}
+
+object sessionStateManager <<singleton>>
+sessionStateManager -- SessionStateManager : instance
+
+class RedisClient <<external>>
+SessionStateManager ..> RedisClient : uses
+
+' --- Components & Services ---
+class GuestRegistrationForm {
+  -hotelId: string
+  -hotelName: string
+  +onComplete(sessionId: string, profile: AnalyticsGuestProfile): void
+}
+
+class ErrorBoundary <<React.Component>> {
+  -state
+  +getDerivedStateFromError(error): void
+  +componentDidCatch(error, info): void
+}
+
+interface LanguageContextValue {
+  +language: string
+  +setLanguage(lang): void
+  +t(key: string): string
+  +isRTL: boolean
+}
+
+class LanguageProvider {
+  -language: string
+  -dict: Record
+  +loadLanguage(lang): Promise<void>
+  +setLanguage(lang): void
+  +t(key: string): string
+}
+
+' --- Hotel domain ---
+interface MealTime {
+  +start: string
+  +end: string
+  +available: boolean
+}
+
+interface RestaurantSchedule {
+  +breakfast: MealTime
+  +lunch: MealTime
+  +dinner: MealTime
+}
+
+interface SpaSettings {
+  +available: boolean
+  +openTime: string
+  +closeTime: string
+  +treatments: string[]
+}
+
+interface FacilityHours {
+  +openTime: string
+  +closeTime: string
+  +available: boolean
+}
+
+interface KidsClubSettings {
+  +openTime: string
+  +closeTime: string
+  +available: boolean
+  +ageRange: string
+}
+
+class HotelSettings {
+  +name: string
+  +restaurant: RestaurantSchedule
+  +spa: SpaSettings
+  +pool: FacilityHours
+  +gym: FacilityHours
+  +kidsClub: KidsClubSettings
+  +specialEvents: SpecialEvent[]
+  +contact: ContactInfo
+  +wifi: AmenitySettings
+  +parking: AmenitySettings
+  +checkIn: CheckInOutSettings
+  +checkOut: CheckInOutSettings
+}
+
+interface SpecialEvent {
+  +id: string
+  +title: string
+  +description: string
+  +date: string
+  +time: string
+  +location: string
+  +price?: string
+}
+
+interface ContactInfo {
+  +phone: string
+  +email: string
+  +address: string
+  +emergencyPhone: string
+}
+
+interface AmenitySettings {
+  +available: boolean
+  +password?: string
+  +instructions?: string
+  +price?: string
+}
+
+interface CheckInOutSettings {
+  +time: string
+  +instructions?: string
+}
+
+class Hotel {
+  +id: string
+  +name: string
+  +location: string
+  +description: string
+  +image: string
+  +rating: number
+  +tagline: string
+}
+
+class HotelData {
+  +name: string
+  +location: string
+  +description: string
+  +image: string
+  +color: string
+  +coordinates: HotelCoordinates
+  +facilities: Map
+  +activities: HotelActivities
+}
+
+interface HotelCoordinates {
+  +lat: number
+  +lon: number
+}
+
+interface FacilityInfo {
+  +open: string
+  +close: string
+  +type?: string
+  +age_range?: string
+}
+
+interface HotelActivities {
+  +family?: string[]
+  +couples?: string[]
+  +adventure?: string[]
+  +cultural?: string[]
+}
+
+' --- Associations ---
+GuestRegistrationForm --> AnalyticsGuestProfile : submits
+GuestRegistrationForm --> SessionStateManager : creates session
+SessionStateManager ..> Message
+SessionStateManager ..> AnalyticsGuestProfile
+SessionStateManager ..> RedisClient
+
+ClusteringGuestProfile --> Centroid : assigned to
+Attraction --> RankedAttraction : ranked into
+
+HotelSettings *-- SpecialEvent
+HotelData *-- HotelCoordinates
+HotelData *-- FacilityInfo
+
+@enduml

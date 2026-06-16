@@ -108,7 +108,7 @@ export const chatRateLimiter = new RateLimiter({
 /** Auth endpoints — 5 attempts / 15 min per IP */
 export const authRateLimiter = new RateLimiter({
   windowMs: 15 * 60 * 1000,
-  maxRequests: 5,
+  maxRequests: 20,
   keyPrefix: 'ratelimit:auth',
 })
 

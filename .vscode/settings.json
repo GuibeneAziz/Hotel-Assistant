@@ -1,2 +1,8 @@
 {
+	"plantuml.server": "https://www.plantuml.com/plantuml",
+	"plantuml.render": "PlantUMLServer",
+	"files.associations": {
+		"*.puml": "plantuml",
+		"*.plantuml": "plantuml"
+	}
 }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { User, Globe, Briefcase, Users } from 'lucide-react'
+import { Bed, Globe, Briefcase, Users, ArrowRight } from 'lucide-react'
 import { useLanguage } from '@/lib/i18n'
 
 interface GuestRegistrationFormProps {
@@ -24,7 +24,7 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
     ageRange: '26-35',
     nationality: '',
     travelPurpose: 'leisure',
-    groupType: 'couple'
+    groupType: 'couple',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -33,10 +33,8 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
     setIsSubmitting(true)
 
     try {
-      // Generate session ID
       const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      
-      // Try to save profile to database (optional - don't block if it fails)
+
       try {
         await fetch('/api/analytics/guest-profile', {
           method: 'POST',
@@ -44,14 +42,13 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
           body: JSON.stringify({
             sessionId,
             hotelId,
-            ...profile
-          })
+            ...profile,
+          }),
         })
       } catch (apiError) {
         console.log('Analytics API unavailable, continuing anyway:', apiError)
       }
 
-      // Always complete the registration (don't block on API)
       onComplete(sessionId, profile)
     } catch (error) {
       console.error('Error in registration:', error)
@@ -61,54 +58,41 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <motion.div
-          animate={{ x: [0, 40, 0], y: [0, -30, 0] }}
-          transition={{ repeat: Infinity, duration: 14, ease: 'easeInOut' }}
-          className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)' }}
-        />
-        <motion.div
-          animate={{ x: [0, -30, 0], y: [0, 40, 0] }}
-          transition={{ repeat: Infinity, duration: 18, ease: 'easeInOut' }}
-          className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.10) 0%, transparent 70%)' }}
-        />
-      </div>
+    <div className="luxury-page relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <div
+        className="absolute inset-0 bg-cover bg-center scale-105"
+        style={{
+          backgroundImage:
+            'url(https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1920&q=80)',
+        }}
+      />
+      <div className="absolute inset-0 bg-luxury-bg/85 backdrop-blur-sm" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative bg-gray-900/70 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-8 max-w-md w-full z-10 overflow-hidden"
-        style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.4)' }}
+        className="relative z-10 w-full max-w-md luxury-glass rounded-2xl p-8 shadow-luxury"
       >
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-        <div className="text-center mb-6">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 30px rgba(99,102,241,0.35)' }}
-          >
-            <User className="w-8 h-8 text-white" />
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-luxury-gold/40 bg-luxury-gold/10">
+            <Bed className="h-7 w-7 text-luxury-gold" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">{t('formTitle')} {hotelName}</h2>
-          <p className="text-gray-500 text-sm">
-            {t('formSubtitle')}
-          </p>
+          <h2 className="font-serif text-2xl font-semibold text-white mb-2">
+            {t('formTitle')} {hotelName}
+          </h2>
+          <p className="text-sm text-luxury-muted">{t('formSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Age Range */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
-              <User className="w-4 h-4 inline mr-2" />
+            <label className="luxury-label flex items-center gap-2">
+              <Users className="h-3.5 w-3.5" />
               {t('ageRange')}
             </label>
             <select
               value={profile.ageRange}
-              onChange={(e) => setProfile({ ...profile, ageRange: e.target.value as any })}
-              className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none [&>option]:bg-gray-900 [&>option]:text-white transition-all"
+              onChange={(e) => setProfile({ ...profile, ageRange: e.target.value as GuestProfile['ageRange'] })}
+              className="luxury-input [&>option]:bg-luxury-card [&>option]:text-white"
               required
             >
               <option value="18-25">{t('age1825')}</option>
@@ -118,32 +102,47 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
             </select>
           </div>
 
-          {/* Nationality */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
-              <Globe className="w-4 h-4 inline mr-2" />
+            <label className="luxury-label flex items-center gap-2">
+              <Globe className="h-3.5 w-3.5" />
               {t('nationality')}
             </label>
-            <input
-              type="text"
+            <select
               value={profile.nationality}
               onChange={(e) => setProfile({ ...profile, nationality: e.target.value })}
-              placeholder={t('nationalityPlaceholder')}
-              className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none placeholder:text-gray-600 transition-all"
+              className="luxury-input [&>option]:bg-luxury-card [&>option]:text-white"
               required
-            />
+            >
+              <option value="" disabled>{t('nationalityPlaceholder')}</option>
+              <option value="Tunisian">🇹🇳 Tunisian</option>
+              <option value="French">🇫🇷 French</option>
+              <option value="German">🇩🇪 German</option>
+              <option value="Italian">🇮🇹 Italian</option>
+              <option value="Spanish">🇪🇸 Spanish</option>
+              <option value="British">🇬🇧 British</option>
+              <option value="American">🇺🇸 American</option>
+              <option value="Algerian">🇩🇿 Algerian</option>
+              <option value="Moroccan">🇲🇦 Moroccan</option>
+              <option value="Libyan">🇱🇾 Libyan</option>
+              <option value="Egyptian">🇪🇬 Egyptian</option>
+              <option value="Dutch">🇳🇱 Dutch</option>
+              <option value="Belgian">🇧🇪 Belgian</option>
+              <option value="Swiss">🇨🇭 Swiss</option>
+              <option value="Polish">🇵🇱 Polish</option>
+              <option value="Russian">🇷🇺 Russian</option>
+              <option value="Other">🌍 Other</option>
+            </select>
           </div>
 
-          {/* Travel Purpose */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
-              <Briefcase className="w-4 h-4 inline mr-2" />
+            <label className="luxury-label flex items-center gap-2">
+              <Briefcase className="h-3.5 w-3.5" />
               {t('travelPurpose')}
             </label>
             <select
               value={profile.travelPurpose}
-              onChange={(e) => setProfile({ ...profile, travelPurpose: e.target.value as any })}
-              className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none [&>option]:bg-gray-900 [&>option]:text-white transition-all"
+              onChange={(e) => setProfile({ ...profile, travelPurpose: e.target.value as GuestProfile['travelPurpose'] })}
+              className="luxury-input [&>option]:bg-luxury-card [&>option]:text-white"
               required
             >
               <option value="leisure">{t('purposeLeisure')}</option>
@@ -153,16 +152,15 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
             </select>
           </div>
 
-          {/* Group Type */}
           <div>
-            <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
-              <Users className="w-4 h-4 inline mr-2" />
+            <label className="luxury-label flex items-center gap-2">
+              <Users className="h-3.5 w-3.5" />
               {t('travelingWith')}
             </label>
             <select
               value={profile.groupType}
-              onChange={(e) => setProfile({ ...profile, groupType: e.target.value as any })}
-              className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none [&>option]:bg-gray-900 [&>option]:text-white transition-all"
+              onChange={(e) => setProfile({ ...profile, groupType: e.target.value as GuestProfile['groupType'] })}
+              className="luxury-input [&>option]:bg-luxury-card [&>option]:text-white"
               required
             >
               <option value="solo">{t('groupSolo')}</option>
@@ -172,23 +170,24 @@ export default function GuestRegistrationForm({ hotelId, hotelName, onComplete }
             </select>
           </div>
 
-          {/* Submit Button */}
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             type="submit"
             disabled={isSubmitting}
-            className="w-full text-white font-semibold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 20px rgba(99,102,241,0.3)' }}
+            className="btn-luxury-gradient flex w-full items-center justify-center gap-2 rounded-xl py-3.5 disabled:opacity-50"
           >
             {isSubmitting ? t('saving') : t('continueBtn')}
+            {!isSubmitting && <ArrowRight className="h-4 w-4" />}
           </motion.button>
         </form>
 
-        <p className="text-xs text-gray-600 text-center mt-4">
-          {t('formFooter')}
-        </p>
+        <p className="mt-4 text-center text-xs text-neutral-500">{t('formFooter')}</p>
       </motion.div>
+
+      <p className="absolute bottom-4 left-6 z-10 text-xs text-neutral-500">
+        © 2025 Sindbad Luxury Hotels
+      </p>
     </div>
   )
 }

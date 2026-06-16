@@ -136,8 +136,8 @@ export async function GET(request: Request) {
         : 'WHERE first_visit >= $1'
       const params = hotelId ? [hotelId, startDate] : [startDate]
 
-      // Run all 4 aggregate queries in parallel
-      const [ageResult, nationalityResult, purposeResult, groupResult] = await Promise.all([
+      // Run all 5 aggregate queries in parallel
+      const [ageResult, nationalityResult, purposeResult, groupResult, languageResult] = await Promise.all([
         client.query(
           `SELECT age_range, COUNT(*) as count FROM guest_profiles ${baseWhere} GROUP BY age_range ORDER BY count DESC`,
           params
@@ -152,6 +152,10 @@ export async function GET(request: Request) {
         ),
         client.query(
           `SELECT group_type, COUNT(*) as count FROM guest_profiles ${baseWhere} GROUP BY group_type ORDER BY count DESC`,
+          params
+        ),
+        client.query(
+          `SELECT COALESCE(preferred_language, 'en') as lang, COUNT(*) as count FROM guest_profiles ${baseWhere} GROUP BY lang ORDER BY count DESC`,
           params
         ),
       ])
@@ -186,6 +190,16 @@ export async function GET(request: Request) {
         value: parseInt(row.count),
       }))
 
+      const LANG_LABELS: Record<string, string> = {
+        en: 'English', fr: 'French', de: 'German',
+        es: 'Spanish', it: 'Italian', ar: 'Arabic',
+      }
+      const languageDistribution = languageResult.rows.map(row => ({
+        name: LANG_LABELS[row.lang] ?? row.lang.toUpperCase(),
+        code: row.lang,
+        value: parseInt(row.count),
+      }))
+
       return NextResponse.json({
         success: true,
         data: {
@@ -193,6 +207,7 @@ export async function GET(request: Request) {
           topNationalities,
           travelPurposes,
           groupTypes,
+          languageDistribution,
           totalGuests
         }
       })

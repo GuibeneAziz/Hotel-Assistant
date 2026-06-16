@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, CalendarDays, Droplets, MapPin, Send, Sun, Thermometer, Wind, X } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Droplets, MapPin, Mic, Send, Square, Sun, Thermometer, ThumbsDown, ThumbsUp, Volume2, VolumeX, Wind, X } from 'lucide-react'
 import Image from 'next/image'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import GuestRegistrationForm, { GuestProfile } from '@/app/components/GuestRegistrationForm'
 import { useLanguage } from '@/lib/i18n'
@@ -173,7 +173,7 @@ function MapCard({
   return (
     <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
       <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white">
-        <MapPin className="h-4 w-4 text-blue-400 shrink-0" />
+        <MapPin className="h-4 w-4 shrink-0 text-luxury-gold" />
         <span className="truncate">{name}</span>
       </div>
       <div className="px-3 py-2.5">
@@ -181,7 +181,7 @@ function MapCard({
           href={directionsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-xl bg-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-300 transition hover:bg-blue-500/30"
+          className="btn-luxury-outline !py-1.5 !px-3 text-xs"
         >
           <MapPin className="h-3 w-3" />
           Get directions on Google Maps
@@ -221,28 +221,77 @@ function normalizeEventDate(value: unknown): string | null {
   return null
 }
 
+// Map app languages to BCP-47 voice locales used by the Web Speech API
+const SPEECH_LOCALES: Record<string, string> = {
+  en: 'en-US',
+  fr: 'fr-FR',
+  ar: 'ar-SA',
+  es: 'es-ES',
+  de: 'de-DE',
+  it: 'it-IT',
+}
+
+// Strip [IMAGE:...] / [MAP:...] tags and the "📸 **Name**" labels so only
+// the spoken text remains when reading an assistant reply aloud.
+function getSpeakableText(content: string): string {
+  return content
+    .replace(/📸 \*\*[^*]+\*\*/g, '')
+    .replace(/\[IMAGE:[^\]]+\]/g, '')
+    .replace(/\[MAP:[^\]]+\]/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export default function HotelAssistant() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isAdminPreview = searchParams.get('preview') === 'admin'
   const { t, language } = useLanguage()
   const hotelId = params.id as string
   const hotel = hotelData[hotelId as HotelId]
 
   const [messages, setMessages] = useState<Message[]>([])
+  const [reactions, setReactions] = useState<Record<string, 'positive' | 'negative'>>({})
   const [inputMessage, setInputMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [weather, setWeather] = useState<WeatherData | null>(null)
   const [hotelSettings, setHotelSettings] = useState<any>(null)
-  const [pageState, setPageState] = useState<HotelPageState>({
-    showRegistration: true,
-    sessionId: null,
-    guestProfile: null,
+  const [pageState, setPageState] = useState<HotelPageState>(() => {
+    if (isAdminPreview) {
+      return {
+        showRegistration: false,
+        sessionId: `admin_preview_${Date.now()}`,
+        guestProfile: {
+          ageRange: '36-50',
+          nationality: 'Tunisian',
+          travelPurpose: 'leisure',
+          groupType: 'couple',
+        },
+      }
+    }
+    return { showRegistration: true, sessionId: null, guestProfile: null }
   })
+
+  // Voice feature state (browser-native, optional enhancement)
+  const [voiceSupported, setVoiceSupported] = useState(false)
+  const [speechSupported, setSpeechSupported] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [speechEnabled, setSpeechEnabled] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const stickToBottomRef = useRef(true)
+  const recognitionRef = useRef<any>(null)
+  const speechEnabledRef = useRef(false)
+  const languageRef = useRef(language)
+  const listeningIntentRef = useRef(false)
+  const finalTranscriptRef = useRef('')
+  const baseTextRef = useRef('')
 
   const scrollMessagesToBottom = (behavior: ScrollBehavior = 'smooth') => {
     const container = messagesContainerRef.current
@@ -344,14 +393,197 @@ export default function HotelAssistant() {
     }
   }, [inputMessage])
 
+  // Keep refs in sync so speech recognition callbacks read the latest values
+  useEffect(() => { speechEnabledRef.current = speechEnabled }, [speechEnabled])
+  useEffect(() => { languageRef.current = language }, [language])
+
+  // Detect browser voice capabilities once on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    setVoiceSupported(!!SpeechRecognition)
+    setSpeechSupported('speechSynthesis' in window)
+
+    return () => {
+      listeningIntentRef.current = false
+      try {
+        recognitionRef.current?.abort?.()
+      } catch {/* ignore */}
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
+
+  const stopSpeaking = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    window.speechSynthesis.cancel()
+    setIsSpeaking(false)
+  }
+
+  const speakMessage = (content: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+
+    const text = getSpeakableText(content)
+    if (!text) return
+
+    window.speechSynthesis.cancel()
+
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = SPEECH_LOCALES[languageRef.current] || 'en-US'
+
+    const voices = window.speechSynthesis.getVoices()
+    const preferred = voices.find((v) => v.lang === utterance.lang)
+      || voices.find((v) => v.lang?.startsWith(utterance.lang.split('-')[0]))
+    if (preferred) utterance.voice = preferred
+
+    utterance.onstart = () => setIsSpeaking(true)
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
+
+    window.speechSynthesis.speak(utterance)
+  }
+
+  const stopListening = () => {
+    // User intent: stop. Prevents the auto-restart in onend.
+    listeningIntentRef.current = false
+    try {
+      recognitionRef.current?.stop()
+    } catch {/* ignore */}
+    setIsListening(false)
+  }
+
+  const startListening = () => {
+    if (typeof window === 'undefined') return
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) return
+
+    // Cancel any ongoing speech so the mic does not capture the assistant voice
+    stopSpeaking()
+    setVoiceError('')
+
+    // Tear down any previous instance so start() does not throw "already started"
+    try {
+      recognitionRef.current?.abort?.()
+    } catch {/* ignore */}
+
+    // Preserve anything already typed, then append spoken text after it.
+    const existing = inputMessage.trim()
+    baseTextRef.current = existing ? existing + ' ' : ''
+    finalTranscriptRef.current = ''
+    listeningIntentRef.current = true
+
+    const buildRecognition = () => {
+      const recognition = new SpeechRecognition()
+      recognition.lang = SPEECH_LOCALES[languageRef.current] || 'en-US'
+      recognition.interimResults = true
+      recognition.continuous = true
+      recognition.maxAlternatives = 1
+
+      recognition.onstart = () => setIsListening(true)
+
+      recognition.onresult = (event: any) => {
+        let interim = ''
+        // Only process results from this event's starting index forward
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i]
+          const text = result[0].transcript
+          if (result.isFinal) {
+            finalTranscriptRef.current += text + ' '
+          } else {
+            interim += text
+          }
+        }
+        setInputMessage((baseTextRef.current + finalTranscriptRef.current + interim).trimStart())
+      }
+
+      recognition.onerror = (event: any) => {
+        console.error('SpeechRecognition error:', event?.error, event)
+        const err = event?.error
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          setVoiceError(t('voiceErrorPermission'))
+          listeningIntentRef.current = false
+        } else if (err === 'network') {
+          setVoiceError(t('voiceErrorNetwork'))
+          listeningIntentRef.current = false
+        } else if (err && err !== 'aborted' && err !== 'no-speech') {
+          setVoiceError(t('voiceErrorGeneric'))
+        }
+        // 'no-speech' and 'aborted' are non-fatal: onend will auto-restart if intended
+      }
+
+      recognition.onend = () => {
+        // Auto-restart while the user still wants to dictate (continuous sessions
+        // end on their own after silence in some browsers).
+        if (listeningIntentRef.current) {
+          try {
+            recognition.start()
+          } catch {
+            setIsListening(false)
+          }
+        } else {
+          setIsListening(false)
+        }
+      }
+
+      return recognition
+    }
+
+    const recognition = buildRecognition()
+    recognitionRef.current = recognition
+    try {
+      recognition.start()
+    } catch (e) {
+      console.error('SpeechRecognition start failed:', e)
+      setVoiceError(t('voiceErrorGeneric'))
+      listeningIntentRef.current = false
+      setIsListening(false)
+    }
+  }
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening()
+    } else {
+      startListening()
+    }
+  }
+
+  const toggleSpeech = () => {
+    setSpeechEnabled((prev) => {
+      const next = !prev
+      if (!next) stopSpeaking()
+      return next
+    })
+  }
+
   const handleRegistrationComplete = (sessionId: string, profile: GuestProfile) => {
     setPageState({ showRegistration: false, sessionId, guestProfile: profile })
+  }
+
+  const handleReaction = async (messageId: string, reaction: 'positive' | 'negative') => {
+    if (reactions[messageId]) return // already reacted
+    setReactions(prev => ({ ...prev, [messageId]: reaction }))
+    try {
+      await fetch('/api/analytics/reaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hotelId: hotel?.id, reaction }),
+      })
+    } catch {/* fire-and-forget */}
   }
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !hotel) {
       return
     }
+
+    // Stop microphone if it was active so it does not keep capturing
+    if (isListening) stopListening()
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -387,15 +619,21 @@ export default function HotelAssistant() {
 
       const data = await response.json()
 
+      const assistantContent = data.response || 'I apologize, I could not generate a response.'
       setMessages((prev) => ([
         ...prev,
         {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: data.response || 'I apologize, I could not generate a response.',
+          content: assistantContent,
           timestamp: new Date(),
         },
       ]))
+
+      // Read the reply aloud when voice output is enabled
+      if (speechEnabledRef.current) {
+        speakMessage(assistantContent)
+      }
     } catch (error) {
       console.error('Chat request failed:', error)
       setMessages((prev) => ([
@@ -488,12 +726,12 @@ export default function HotelAssistant() {
 
   if (!hotel) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="luxury-page flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-white mb-2">{t('hotelNotFound')}</h1>
+          <h1 className="mb-2 font-serif text-2xl font-semibold text-luxury-gold">{t('hotelNotFound')}</h1>
           <button
             onClick={() => router.push('/')}
-            className="text-indigo-400 hover:text-indigo-300 transition-colors"
+            className="text-luxury-gold transition-colors hover:text-luxury-gold-light"
           >
             {t('returnHome')}
           </button>
@@ -513,29 +751,9 @@ export default function HotelAssistant() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white relative overflow-x-hidden">
+    <div className="luxury-page relative overflow-x-hidden text-white z-0">
 
-      {/* Animated background orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <motion.div
-          animate={{ x: [0, 30, 0], y: [0, -20, 0] }}
-          transition={{ repeat: Infinity, duration: 14, ease: 'easeInOut' }}
-          className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 70%)' }}
-        />
-        <motion.div
-          animate={{ x: [0, -25, 0], y: [0, 30, 0] }}
-          transition={{ repeat: Infinity, duration: 18, ease: 'easeInOut' }}
-          className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.08) 0%, transparent 70%)' }}
-        />
-        <div
-          className="absolute inset-0 opacity-[0.02]"
-          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)', backgroundSize: '60px 60px' }}
-        />
-      </div>
-
-      <header className="sticky top-0 z-20 border-b border-white/[0.07]" style={{ background: 'rgba(9,9,11,0.85)', backdropFilter: 'blur(20px)' }}>
+      <header className="luxury-header sticky top-0 z-20">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex items-center gap-3">
             <motion.button
@@ -547,9 +765,16 @@ export default function HotelAssistant() {
               <ArrowLeft className="h-5 w-5" />
             </motion.button>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">{hotel.name}</h1>
-              <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="flex items-center gap-2">
+                <h1 className="font-serif text-xl font-semibold text-luxury-gold tracking-tight">{hotel.name}</h1>
+                {isAdminPreview && (
+                  <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                    Admin Preview
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-luxury-muted">
+                <div className="w-1.5 h-1.5 rounded-full bg-luxury-gold animate-pulse" />
                 <MapPin className="h-3 w-3" />
                 <span>{hotel.location}</span>
               </div>
@@ -561,20 +786,20 @@ export default function HotelAssistant() {
 
       <main className="mx-auto grid max-w-7xl items-start gap-4 px-4 py-6 lg:grid-cols-[340px,minmax(0,1fr)] relative z-10">
         <aside className="space-y-4">
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-gray-900/70 backdrop-blur-xl" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.3)' }}>
+          <div className="luxury-card overflow-hidden">
             <div className="relative h-52">
               <Image src={hotel.image} alt={hotel.name} fill sizes="(max-width: 1023px) 100vw, 340px" className="object-cover" priority />
-              <div className={`absolute inset-0 bg-gradient-to-t ${hotel.color} opacity-50`} />
+              <div className="absolute inset-0 bg-gradient-to-t from-luxury-bg via-luxury-bg/40 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-5">
-                <p className="text-sm uppercase tracking-[0.3em] text-white/70">{t('hotelAssistant')}</p>
-                <h2 className="text-2xl font-semibold">{hotel.name}</h2>
+                <p className="text-sm uppercase tracking-[0.3em] text-luxury-gold/80">{t('hotelAssistant')}</p>
+                <h2 className="font-serif text-2xl font-semibold text-white">{hotel.name}</h2>
                 <p className="mt-2 text-sm text-slate-100/90">{t(`hotel_${hotelId}_desc`) || hotel.description}</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-gray-900/70 backdrop-blur-xl p-5" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.3)' }}>
-            <h3 className="mb-4 text-base font-semibold text-white">{t('liveContext')}</h3>
+          <div className="luxury-card p-5">
+            <h3 className="mb-4 font-serif text-base font-semibold text-luxury-gold">{t('liveContext')}</h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm text-slate-300">
@@ -590,7 +815,7 @@ export default function HotelAssistant() {
               </div>
               <div className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm text-gray-400">
-                  <Droplets className="h-4 w-4 text-cyan-400" /> {t('humidityLabel')}
+                  <Droplets className="h-4 w-4 text-luxury-gold" /> {t('humidityLabel')}
                 </div>
                 <p className="text-sm text-gray-200">{weather ? `${weather.humidity}%` : t('unavailable')}</p>
               </div>
@@ -603,8 +828,8 @@ export default function HotelAssistant() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-gray-900/70 backdrop-blur-xl p-5" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.3)' }}>
-            <h3 className="mb-4 text-base font-semibold text-white">{t('hotelDetails')}</h3>
+          <div className="luxury-card p-5">
+            <h3 className="mb-4 font-serif text-base font-semibold text-luxury-gold">{t('hotelDetails')}</h3>
             <div className="space-y-3 text-sm text-gray-200">
               <div>
                 <p className="text-gray-500">{t('checkIn')}</p>
@@ -628,11 +853,10 @@ export default function HotelAssistant() {
         </aside>
 
         <div className="space-y-4">
-          <section className="flex min-h-[32rem] max-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-gray-900/70 backdrop-blur-xl" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.3)' }}>
+          <section className="luxury-card flex min-h-[32rem] max-h-[calc(100vh-8rem)] flex-col overflow-hidden">
             <div className="relative border-b border-white/10 px-6 py-4">
-              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-              <h2 className="text-base font-bold text-white tracking-tight">{t('guestAssistant')}</h2>
-              <p className="text-xs text-gray-500">
+              <h2 className="font-serif text-lg font-semibold text-luxury-gold tracking-tight">{t('guestAssistant')}</h2>
+              <p className="text-xs text-luxury-muted">
                 {t('guestAssistantSub')}
               </p>
             </div>
@@ -661,11 +885,8 @@ export default function HotelAssistant() {
                   >
                     <div
                       className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-lg ${
-                        isAssistant
-                          ? 'border border-white/10 bg-white/5 backdrop-blur-sm text-gray-100'
-                          : 'text-white'
+                        isAssistant ? 'chat-bubble-assistant' : 'chat-bubble-user'
                       }`}
-                      style={!isAssistant ? { background: 'linear-gradient(135deg, #6366F1, #06B6D4)' } : {}}
                     >
                       {parsed.text ? (
                         <p className="whitespace-pre-wrap text-sm leading-6">{parsed.text}</p>
@@ -677,7 +898,7 @@ export default function HotelAssistant() {
                             <div key={`${image.label || 'photo'}-${image.url}`} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
                               {image.label ? (
                                 <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-200">
-                                  <MapPin className="h-3.5 w-3.5 text-blue-300" />
+                                  <MapPin className="h-3.5 w-3.5 text-luxury-gold" />
                                   <span className="truncate">{image.label}</span>
                                 </div>
                               ) : null}
@@ -708,8 +929,42 @@ export default function HotelAssistant() {
                         </div>
                       ) : null}
 
-                      <div className="mt-2 text-xs text-slate-400">
-                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="text-xs text-slate-400">
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {isAssistant && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleReaction(message.id, 'positive')}
+                              disabled={!!reactions[message.id]}
+                              className={`rounded-lg p-1 transition-colors ${
+                                reactions[message.id] === 'positive'
+                                  ? 'text-emerald-400'
+                                  : reactions[message.id]
+                                  ? 'text-gray-600 cursor-not-allowed'
+                                  : 'text-gray-500 hover:text-emerald-400'
+                              }`}
+                              title="Helpful"
+                            >
+                              <ThumbsUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleReaction(message.id, 'negative')}
+                              disabled={!!reactions[message.id]}
+                              className={`rounded-lg p-1 transition-colors ${
+                                reactions[message.id] === 'negative'
+                                  ? 'text-red-400'
+                                  : reactions[message.id]
+                                  ? 'text-gray-600 cursor-not-allowed'
+                                  : 'text-gray-500 hover:text-red-400'
+                              }`}
+                              title="Not helpful"
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -730,7 +985,40 @@ export default function HotelAssistant() {
           </div>
 
             <div className="border-t border-white/10 p-4 sm:p-6">
-              <div className="flex gap-3">
+              {voiceError && (
+                <div className="mb-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {voiceError}
+                </div>
+              )}
+              {speechSupported && (
+                <div className="mb-3 flex items-center justify-end gap-2">
+                  {isSpeaking && (
+                    <button
+                      type="button"
+                      onClick={stopSpeaking}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-200 transition hover:bg-white/10"
+                    >
+                      <Square className="h-3 w-3" />
+                      {t('voiceStop')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={toggleSpeech}
+                    aria-pressed={speechEnabled}
+                    title={speechEnabled ? t('voiceOutputOn') : t('voiceOutputOff')}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      speechEnabled
+                        ? 'border-luxury-gold/40 bg-luxury-gold/15 text-luxury-gold'
+                        : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                    }`}
+                  >
+                    {speechEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                    {speechEnabled ? t('voiceOutputOn') : t('voiceOutputOff')}
+                  </button>
+                </div>
+              )}
+              <div className="flex items-end gap-2 sm:gap-3">
                 <textarea
                   ref={textareaRef}
                   value={inputMessage}
@@ -742,14 +1030,28 @@ export default function HotelAssistant() {
                     }
                   }}
                   placeholder={t('chatPlaceholder')}
-                  className="min-h-[56px] max-h-40 flex-1 resize-none rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-cyan-400"
+                  className="luxury-input min-h-[56px] max-h-40 flex-1 resize-none"
                   rows={1}
                 />
+                {voiceSupported && (
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    aria-pressed={isListening}
+                    title={isListening ? t('voiceListening') : t('voiceSpeak')}
+                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border transition hover:scale-[1.02] ${
+                      isListening
+                        ? 'animate-pulse border-rose-400/50 bg-rose-500/25 text-rose-200'
+                        : 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
+                    }`}
+                  >
+                    <Mic className="h-5 w-5" />
+                  </button>
+                )}
                 <button
                   onClick={handleSendMessage}
                   disabled={isLoading || !inputMessage.trim()}
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl text-white transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}
+                  className="btn-luxury-primary shrink-0 !h-14 !w-14 !p-0 rounded-2xl disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="h-5 w-5" />
                 </button>
@@ -758,9 +1060,9 @@ export default function HotelAssistant() {
           </section>
 
           {upcomingEvents.length > 0 && (
-            <section className="rounded-2xl border border-amber-500/20 bg-amber-500/5 backdrop-blur-xl p-5" style={{ boxShadow: '0 0 0 1px rgba(245,158,11,0.05)' }}>
-              <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-                <CalendarDays className="h-5 w-5 text-amber-400" />
+            <section className="luxury-card border-luxury-gold/20 p-5">
+              <h3 className="mb-4 flex items-center gap-2 font-serif text-lg font-semibold text-luxury-gold">
+                <CalendarDays className="h-5 w-5" />
                 {t('upcomingEvents')}
               </h3>
               <div className="grid gap-4 xl:grid-cols-2">
@@ -773,7 +1075,7 @@ export default function HotelAssistant() {
                     )}
                     <div className="p-4 flex flex-col justify-between">
                       <div>
-                        <h4 className="font-semibold text-amber-200">{event.title}</h4>
+                        <h4 className="font-semibold text-luxury-gold">{event.title}</h4>
                         {event.description && (
                           <p className="mt-2 text-sm text-slate-300">{event.description}</p>
                         )}
@@ -787,7 +1089,7 @@ export default function HotelAssistant() {
                       {event.requiresReservation && (
                         <button
                           onClick={() => openReservationModal(event)}
-                          className="mt-4 w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 py-2 text-sm font-semibold text-white transition hover:opacity-90 active:scale-95"
+                          className="btn-luxury-primary mt-4 w-full py-2 text-sm"
                         >
                           {t('reserveSpot')}
                         </button>

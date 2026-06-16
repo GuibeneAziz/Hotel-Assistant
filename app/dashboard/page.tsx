@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState, useEffect, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Settings, Save, LogOut, MapPin, Eye, BarChart3, ChevronRight, Plus, Trash2, RefreshCw } from 'lucide-react'
+import { Settings, Save, MapPin, Eye, ChevronRight, Plus, Trash2, RefreshCw } from 'lucide-react'
+import AdminShell from '@/app/components/admin/AdminShell'
+import OperatingHoursPanel from '@/app/components/admin/OperatingHoursPanel'
 
 interface RestaurantSchedule {
   breakfast: { start: string; end: string; available: boolean }
@@ -16,6 +18,14 @@ interface SpaSettings {
   openTime: string
   closeTime: string
   treatments: string[]
+  weekendOpenTime?: string
+  weekendCloseTime?: string
+  bookingRequired?: boolean
+}
+
+interface ReceptionSettings {
+  openTime: string
+  closeTime: string
 }
 
 interface SpecialEvent {
@@ -41,7 +51,17 @@ interface HotelSettings {
   name: string
   restaurant: RestaurantSchedule
   spa: SpaSettings
-  pool: { openTime: string; closeTime: string; available: boolean }
+  pool: {
+    openTime: string
+    closeTime: string
+    available: boolean
+    barOpenTime?: string
+    barCloseTime?: string
+    maintenanceNote?: string
+    seasonLabel?: string
+  }
+  reception?: ReceptionSettings
+  restaurantDisplayName?: string
   gym: { openTime: string; closeTime: string; available: boolean }
   kidsClub: { openTime: string; closeTime: string; available: boolean; ageRange: string }
   specialEvents: SpecialEvent[]
@@ -63,10 +83,23 @@ const defaultSettings: { [key: string]: HotelSettings } = {
     spa: {
       available: true,
       openTime: '09:00',
-      closeTime: '20:00',
+      closeTime: '21:00',
+      weekendOpenTime: '08:00',
+      weekendCloseTime: '22:00',
+      bookingRequired: true,
       treatments: ['Traditional Hammam', 'Aromatherapy Massage', 'Facial Treatment']
     },
-    pool: { openTime: '06:00', closeTime: '22:00', available: true },
+    pool: {
+      openTime: '06:00',
+      closeTime: '22:00',
+      barOpenTime: '10:00',
+      barCloseTime: '23:00',
+      available: true,
+      seasonLabel: 'SUMMER SEASON',
+      maintenanceNote: 'Maintenance scheduled for next Tuesday, 04:00 – 08:00.',
+    },
+    reception: { openTime: '08:00', closeTime: '23:00' },
+    restaurantDisplayName: 'The Gilded Plate',
     gym: { openTime: '05:00', closeTime: '23:00', available: true },
     kidsClub: { openTime: '09:00', closeTime: '17:00', available: true, ageRange: '4-12' },
     specialEvents: [],
@@ -91,10 +124,23 @@ const defaultSettings: { [key: string]: HotelSettings } = {
     spa: {
       available: true,
       openTime: '09:00',
-      closeTime: '20:00',
+      closeTime: '21:00',
+      weekendOpenTime: '08:00',
+      weekendCloseTime: '22:00',
+      bookingRequired: true,
       treatments: ['Hammam Royal', 'Thalassotherapy', 'Aromatherapy Massage', 'Reflexology']
     },
-    pool: { openTime: '08:00', closeTime: '20:00', available: true },
+    pool: {
+      openTime: '08:00',
+      closeTime: '20:00',
+      barOpenTime: '10:00',
+      barCloseTime: '22:00',
+      available: true,
+      seasonLabel: 'SUMMER SEASON',
+      maintenanceNote: 'Maintenance scheduled for next Tuesday, 04:00 – 08:00.',
+    },
+    reception: { openTime: '08:00', closeTime: '23:00' },
+    restaurantDisplayName: 'La Terrasse',
     gym: { openTime: '06:00', closeTime: '22:00', available: true },
     kidsClub: { openTime: '09:00', closeTime: '17:00', available: false, ageRange: 'N/A' },
     specialEvents: [],
@@ -120,9 +166,22 @@ const defaultSettings: { [key: string]: HotelSettings } = {
       available: false,
       openTime: '00:00',
       closeTime: '00:00',
+      weekendOpenTime: '08:00',
+      weekendCloseTime: '22:00',
+      bookingRequired: false,
       treatments: []
     },
-    pool: { openTime: '07:00', closeTime: '21:00', available: true },
+    pool: {
+      openTime: '07:00',
+      closeTime: '21:00',
+      barOpenTime: '09:00',
+      barCloseTime: '20:00',
+      available: true,
+      seasonLabel: 'SUMMER SEASON',
+      maintenanceNote: 'Maintenance scheduled for next Tuesday, 04:00 – 08:00.',
+    },
+    reception: { openTime: '08:00', closeTime: '23:00' },
+    restaurantDisplayName: 'Le Restaurant',
     gym: { openTime: '06:00', closeTime: '23:00', available: true },
     kidsClub: { openTime: '09:00', closeTime: '17:00', available: false, ageRange: 'N/A' },
     specialEvents: [],
@@ -139,8 +198,11 @@ const defaultSettings: { [key: string]: HotelSettings } = {
   }
 }
 
-export default function AdminDashboard() {
+const VALID_TABS = ['services', 'events', 'contact', 'amenities', 'attractions', 'reservations'] as const
+
+function AdminDashboardPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [selectedHotel, setSelectedHotel] = useState<string>('sindbad-hammamet')
   const [settings, setSettings] = useState<{ [key: string]: HotelSettings }>(defaultSettings)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -178,6 +240,13 @@ export default function AdminDashboard() {
     localStorage.removeItem('adminToken')
     router.push('/admin/login')
   }
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab && (VALID_TABS as readonly string[]).includes(tab)) {
+      setActiveTab(tab as (typeof VALID_TABS)[number])
+    }
+  }, [searchParams])
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -421,28 +490,18 @@ export default function AdminDashboard() {
     })
   }
 
-  const updateTimeSlot = (service: string, field: string, value: string) => {
-    if (service === 'restaurant') {
-      const mealType = field.split('.')[0] as 'breakfast' | 'lunch' | 'dinner'
-      const timeType = field.split('.')[1] as 'start' | 'end'
-      
-      updateHotelSettings(selectedHotel, {
-        restaurant: {
-          ...currentHotel.restaurant,
-          [mealType]: {
-            ...currentHotel.restaurant[mealType],
-            [timeType]: value
-          }
-        }
-      })
-    } else {
-      updateHotelSettings(selectedHotel, {
-        [service]: {
-          ...(currentHotel as any)[service],
-          [field]: value
-        }
-      })
-    }
+  const resetOperatingHours = () => {
+    const defaults = defaultSettings[selectedHotel]
+    if (!defaults) return
+    updateHotelSettings(selectedHotel, {
+      restaurant: JSON.parse(JSON.stringify(defaults.restaurant)),
+      spa: JSON.parse(JSON.stringify(defaults.spa)),
+      pool: JSON.parse(JSON.stringify(defaults.pool)),
+      gym: JSON.parse(JSON.stringify(defaults.gym)),
+      kidsClub: JSON.parse(JSON.stringify(defaults.kidsClub)),
+      reception: defaults.reception ? { ...defaults.reception } : { openTime: '08:00', closeTime: '23:00' },
+      restaurantDisplayName: defaults.restaurantDisplayName,
+    })
   }
 
   const currentHotel = settings[selectedHotel]
@@ -450,300 +509,135 @@ export default function AdminDashboard() {
   // Only show loading if currentHotel is undefined
   if (!currentHotel) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="luxury-page flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div
-            className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse"
-            style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 40px rgba(99,102,241,0.4)' }}
-          >
-            <Settings className="w-10 h-10 text-white" />
+          <div className="mx-auto mb-6 flex h-20 w-20 animate-pulse items-center justify-center rounded-2xl bg-luxury-gold shadow-lg shadow-luxury-gold/25">
+            <Settings className="h-10 w-10 text-luxury-bg" />
           </div>
-          <p className="text-gray-500 font-medium">Loading hotel settings...</p>
+          <p className="font-medium text-luxury-muted">Loading hotel settings...</p>
         </div>
       </div>
     )
   }
 
+  const saveHeaderAction = (
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={saveSettings}
+      disabled={saveStatus === 'saving'}
+      className={`flex items-center gap-2 !min-h-0 rounded-xl px-5 py-2 text-sm font-semibold transition-all disabled:opacity-50 ${
+        saveStatus === 'saved'
+          ? 'bg-emerald-500/80 text-white'
+          : saveStatus === 'saving'
+          ? 'cursor-not-allowed bg-white/10 text-white'
+          : 'btn-luxury-primary !py-2'
+      }`}
+    >
+      <motion.div
+        animate={saveStatus === 'saving' ? { rotate: 360 } : {}}
+        transition={{ duration: 1, repeat: saveStatus === 'saving' ? Infinity : 0, ease: 'linear' }}
+      >
+        <Save className="h-4 w-4" />
+      </motion.div>
+      <span>{saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save'}</span>
+    </motion.button>
+  )
+
   return (
-    <div className="min-h-screen bg-gray-950 relative overflow-x-hidden">
-      {/* Animated background orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <motion.div
-          animate={{ x: [0, 30, 0], y: [0, -20, 0] }}
-          transition={{ repeat: Infinity, duration: 14, ease: 'easeInOut' }}
-          className="absolute -top-40 -right-40 w-[700px] h-[700px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)' }}
-        />
-        <motion.div
-          animate={{ x: [0, -25, 0], y: [0, 30, 0] }}
-          transition={{ repeat: Infinity, duration: 18, ease: 'easeInOut' }}
-          className="absolute -bottom-40 -left-40 w-[600px] h-[600px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.10) 0%, transparent 70%)' }}
-        />
-        <div
-          className="absolute inset-0 opacity-[0.025]"
-          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,1) 1px, transparent 1px)', backgroundSize: '60px 60px' }}
-        />
-      </div>
-
-      <header className="relative z-20 border-b border-white/[0.07]" style={{ background: 'rgba(9,9,11,0.85)', backdropFilter: 'blur(20px)' }}>
-        <div className="max-w-7xl mx-auto px-6 py-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 20px rgba(99,102,241,0.4)' }}
-              >
-                <Settings className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">Hotel Dashboard</h1>
-                <p className="text-xs text-gray-500">Manage settings & information</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => router.push('/admin/analytics')}
-                className="flex items-center space-x-2 px-4 py-2 rounded-xl font-medium text-sm border border-white/10 text-gray-400 hover:text-white hover:border-white/20 hover:bg-white/5 transition-all"
-              >
-                <BarChart3 className="w-4 h-4" />
-                <span>Analytics</span>
-              </motion.button>
-
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={saveSettings}
-                disabled={saveStatus === 'saving'}
-                className={`flex items-center space-x-2 px-5 py-2 rounded-xl font-medium text-sm transition-all text-white disabled:opacity-50 ${
-                  saveStatus === 'saved'
-                    ? 'bg-emerald-500/80 shadow-lg shadow-emerald-500/20'
-                    : saveStatus === 'saving'
-                    ? 'bg-white/10 cursor-not-allowed'
-                    : ''
-                }`}
-                style={saveStatus === 'idle' ? { background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 16px rgba(99,102,241,0.3)' } : {}}
-              >
-                <motion.div
-                  animate={saveStatus === 'saving' ? { rotate: 360 } : {}}
-                  transition={{ duration: 1, repeat: saveStatus === 'saving' ? Infinity : 0, ease: 'linear' }}
-                >
-                  <Save className="w-4 h-4" />
-                </motion.div>
-                <span>{saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save'}</span>
-              </motion.button>
-
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleLogout}
-                className="flex items-center space-x-2 px-4 py-2 rounded-xl font-medium text-sm border border-red-500/20 text-red-400 hover:bg-red-500/10 hover:border-red-500/40 transition-all"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Logout</span>
-              </motion.button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-6 py-8 relative z-10">
-        <motion.div
-          className="mb-6"
-          initial={{ opacity: 0, y: 20 }}
+    <AdminShell
+      pageTitle="Hotel Dashboard"
+      pageDescription="Manage hotel information, services, special events, and guest reservations across your properties."
+      headerActions={saveHeaderAction}
+      onLogout={handleLogout}
+    >
+        <motion.section
+          className="mb-8"
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.05 }}
         >
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Select Hotel</p>
-          <div className="grid md:grid-cols-3 gap-3">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-luxury-muted">Select property</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             {Object.entries(settings).map(([hotelId, hotel], index) => (
               <motion.button
                 key={hotelId}
+                type="button"
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={() => setSelectedHotel(hotelId)}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 + index * 0.05 }}
-                className={`group p-4 rounded-xl border transition-all duration-200 text-left ${
-                  selectedHotel === hotelId
-                    ? 'border-indigo-500/50 bg-indigo-500/10'
-                    : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.07]'
+                transition={{ delay: 0.05 + index * 0.04 }}
+                className={`admin-hotel-card min-w-[200px] flex-1 sm:max-w-[280px] ${
+                  selectedHotel === hotelId ? 'admin-hotel-card-active' : ''
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200"
-                      style={selectedHotel === hotelId ? { background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 12px rgba(99,102,241,0.35)' } : { background: 'rgba(255,255,255,0.07)' }}
-                    >
-                      <MapPin className={`w-4 h-4 ${selectedHotel === hotelId ? 'text-white' : 'text-gray-500'}`} />
-                    </div>
-                    <span className={`font-semibold text-sm ${selectedHotel === hotelId ? 'text-white' : 'text-gray-400'}`}>{hotel.name}</span>
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                      selectedHotel === hotelId ? 'bg-luxury-gold text-luxury-bg' : 'bg-white/10 text-luxury-muted'
+                    }`}
+                  >
+                    <MapPin className="h-4 w-4" />
                   </div>
-                  {selectedHotel === hotelId && (
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                      <ChevronRight className="w-4 h-4 text-indigo-400" />
-                    </motion.div>
-                  )}
+                  <div className="min-w-0 text-left">
+                    <p className={`truncate text-sm font-semibold ${selectedHotel === hotelId ? 'text-luxury-gold' : 'text-white'}`}>
+                      {hotel.name}
+                    </p>
+                    <p className="truncate text-xs text-luxury-muted">Tunisia</p>
+                  </div>
                 </div>
+                <ChevronRight className={`h-4 w-4 shrink-0 ${selectedHotel === hotelId ? 'text-luxury-gold' : 'text-luxury-muted'}`} />
               </motion.button>
             ))}
           </div>
-        </motion.div>
+        </motion.section>
+
+        <div className="admin-tabs-row">
+          {[
+            { id: 'services', label: 'Services & Hours' },
+            { id: 'events', label: 'Special Events' },
+            { id: 'contact', label: 'Contact Info' },
+            { id: 'amenities', label: 'Amenities' },
+            { id: 'attractions', label: 'Attractions' },
+            { id: 'reservations', label: 'Reservations' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`admin-tab-pill ${activeTab === tab.id ? 'admin-tab-pill-active' : ''}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         <motion.div
-          className="relative bg-gray-900/70 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden p-6"
-          style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.3)' }}
-          initial={{ opacity: 0, y: 20 }}
+          className={activeTab === 'services' ? 'admin-content-panel--flush' : 'admin-content-panel'}
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.1 }}
         >
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-          {/* Tab Bar */}
-          <div className="flex space-x-1 mb-6 bg-white/5 p-1 rounded-xl border border-white/10">
-            {[
-                    { id: 'services', label: 'Services & Hours', icon: '🕐' },
-              { id: 'events', label: 'Special Events', icon: '🎉' },
-              { id: 'contact', label: 'Contact Info', icon: '📞' },
-              { id: 'amenities', label: 'Amenities', icon: '🏨' },
-              { id: 'attractions', label: 'Attractions', icon: '🗺️' },
-              { id: 'reservations', label: 'Reservations', icon: '📅' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 flex items-center justify-center space-x-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  activeTab === tab.id
-                    ? 'bg-white/10 text-white border border-white/20 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <span className="text-base">{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
 
           {activeTab === 'services' && (
-            <motion.div 
-              className="space-y-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.2 }}
-            >
-              <h3 className="text-lg font-semibold text-white">Services & Operating Hours</h3>
-              
-              {/* Restaurant Section */}
-              <div className="bg-white/5 rounded-xl p-5 border border-white/10">
-                <h4 className="font-semibold mb-4 flex items-center space-x-2 text-white">
-                  <span>🍽️</span>
-                  <span>Restaurant</span>
-                </h4>
-                <div className="space-y-3">
-                  {(['breakfast', 'lunch', 'dinner'] as const).map((meal) => (
-                    <div 
-                      key={meal} 
-                      className="bg-white/5 p-4 rounded-xl border border-white/10"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium capitalize text-gray-200">{meal}</span>
-                        <button
-                          onClick={() => updateHotelSettings(selectedHotel, {
-                            restaurant: {
-                              ...currentHotel.restaurant,
-                              [meal]: { ...currentHotel.restaurant[meal], available: !currentHotel.restaurant[meal].available }
-                            }
-                          })}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
-                            currentHotel.restaurant[meal].available 
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                              : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                          }`}
-                        >
-                          {currentHotel.restaurant[meal].available ? 'Open' : 'Closed'}
-                        </button>
-                      </div>
-                      {currentHotel.restaurant[meal].available && (
-                        <div className="flex space-x-4 mt-3">
-                          <div className="flex-1">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Start</label>
-                            <input
-                              type="time"
-                              value={currentHotel.restaurant[meal].start}
-                              onChange={(e) => updateTimeSlot('restaurant', `${meal}.start`, e.target.value)}
-                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">End</label>
-                            <input
-                              type="time"
-                              value={currentHotel.restaurant[meal].end}
-                              onChange={(e) => updateTimeSlot('restaurant', `${meal}.end`, e.target.value)}
-                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Other Services - Spa, Pool, Gym, Kids Club */}
-              {[
-                { key: 'spa', label: 'Spa', icon: '🧘', data: currentHotel.spa },
-                { key: 'pool', label: 'Pool', icon: '🏊', data: currentHotel.pool },
-                { key: 'gym', label: 'Gym', icon: '💪', data: currentHotel.gym },
-              ].map((service) => (
-                <div key={service.key} className="bg-white/5 rounded-xl p-5 border border-white/10">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold flex items-center space-x-2 text-white">
-                      <span>{service.icon}</span>
-                      <span>{service.label}</span>
-                    </h4>
-                    <button
-                      onClick={() => updateHotelSettings(selectedHotel, {
-                        [service.key]: { ...service.data, available: !service.data.available }
-                      })}
-                      className={`px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
-                        service.data.available 
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                      }`}
-                    >
-                      {service.data.available ? 'Open' : 'Closed'}
-                    </button>
-                  </div>
-                  {service.data.available && (
-                    <div className="flex space-x-4">
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Open</label>
-                        <input
-                          type="time"
-                          value={service.data.openTime}
-                          onChange={(e) => updateTimeSlot(service.key, 'openTime', e.target.value)}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Close</label>
-                        <input
-                          type="time"
-                          value={service.data.closeTime}
-                          onChange={(e) => updateTimeSlot(service.key, 'closeTime', e.target.value)}
-                          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </motion.div>
+            <OperatingHoursPanel
+              hotel={{
+                name: currentHotel.name,
+                restaurantDisplayName: currentHotel.restaurantDisplayName,
+                restaurant: currentHotel.restaurant,
+                spa: currentHotel.spa,
+                pool: currentHotel.pool,
+                gym: currentHotel.gym,
+                kidsClub: currentHotel.kidsClub,
+                reception: currentHotel.reception,
+              }}
+              onUpdate={(updates) => updateHotelSettings(selectedHotel, updates)}
+              onSave={saveSettings}
+              onReset={resetOperatingHours}
+              saveStatus={saveStatus}
+            />
           )}
 
           {activeTab === 'events' && (
@@ -751,17 +645,17 @@ export default function AdminDashboard() {
               <h3 className="text-lg font-semibold text-white">Special Events</h3>
               
               {/* Add New Event */}
-              <div className="rounded-xl p-5 border border-indigo-500/25" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(6,182,212,0.05) 100%)' }}>
+              <div className="luxury-card border border-luxury-gold/20 p-5">
                 <h4 className="font-semibold mb-4 flex items-center space-x-2 text-white">
-                  <span className="w-7 h-7 rounded-lg bg-indigo-500/20 flex items-center justify-center text-base">🎉</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-luxury-gold/20 text-base">🎉</span>
                   <span>Add New Event</span>
                 </h4>
                 <div className="grid md:grid-cols-2 gap-3">
-                  <input type="text" placeholder="Event Title" value={newEvent.title} onChange={(e) => setNewEvent({...newEvent, title: e.target.value})} className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                  <input type="date" value={newEvent.date} onChange={(e) => setNewEvent({...newEvent, date: e.target.value})} className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                  <input type="time" placeholder="Time" value={newEvent.time} onChange={(e) => setNewEvent({...newEvent, time: e.target.value})} className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                  <input type="text" placeholder="Location" value={newEvent.location} onChange={(e) => setNewEvent({...newEvent, location: e.target.value})} className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                  <input type="text" placeholder="Price (optional)" value={newEvent.price} onChange={(e) => setNewEvent({...newEvent, price: e.target.value})} className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                  <input type="text" placeholder="Event Title" value={newEvent.title} onChange={(e) => setNewEvent({...newEvent, title: e.target.value})} className="input-admin" />
+                  <input type="date" value={newEvent.date} onChange={(e) => setNewEvent({...newEvent, date: e.target.value})} className="input-admin" />
+                  <input type="time" placeholder="Time" value={newEvent.time} onChange={(e) => setNewEvent({...newEvent, time: e.target.value})} className="input-admin" />
+                  <input type="text" placeholder="Location" value={newEvent.location} onChange={(e) => setNewEvent({...newEvent, location: e.target.value})} className="input-admin" />
+                  <input type="text" placeholder="Price (optional)" value={newEvent.price} onChange={(e) => setNewEvent({...newEvent, price: e.target.value})} className="input-admin" />
                   <div className="flex items-center gap-2">
                     <label className="flex-1 cursor-pointer">
                       <div className={`px-3 py-2 bg-white/5 border rounded-lg text-sm text-center transition-all text-gray-300 ${newEvent.imageUrl ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-white/10 hover:border-white/20'}`}>
@@ -779,14 +673,14 @@ export default function AdminDashboard() {
                     <img src={newEvent.imageUrl} alt="Event preview" className="w-full h-full object-cover" />
                   </div>
                 )}
-                <textarea placeholder="Event Description" value={newEvent.description} onChange={(e) => setNewEvent({...newEvent, description: e.target.value})} className="w-full mt-3 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" rows={3} />
+                <textarea placeholder="Event Description" value={newEvent.description} onChange={(e) => setNewEvent({...newEvent, description: e.target.value})} className="input-admin mt-3 w-full" rows={3} />
                 <div className="mt-3 flex items-center gap-3">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
                       checked={!!newEvent.requiresReservation}
                       onChange={(e) => setNewEvent({ ...newEvent, requiresReservation: e.target.checked })}
-                      className="w-4 h-4 rounded border-white/20 text-indigo-500 focus:ring-indigo-500 bg-white/10"
+                      className="h-4 w-4 rounded border-white/20 bg-white/10 text-luxury-gold focus:ring-luxury-gold"
                     />
                     <span className="text-sm text-gray-200 font-medium">Requires reservation</span>
                   </label>
@@ -795,8 +689,7 @@ export default function AdminDashboard() {
                 <button
                   onClick={addSpecialEvent}
                   disabled={!newEvent.title || !newEvent.date}
-                  className="mt-3 flex items-center space-x-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}
+                  className="btn-luxury-primary mt-3 flex items-center space-x-2 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Event</span>
@@ -829,7 +722,7 @@ export default function AdminDashboard() {
                               {event.location && <span className="bg-white/10 px-2 py-1 rounded-md">📍 {event.location}</span>}
                               {event.price && <span className="bg-white/10 px-2 py-1 rounded-md">💰 {event.price}</span>}
                               {event.requiresReservation && (
-                                <span className="bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 px-2 py-1 rounded-md">📅 Reservation required</span>
+                                <span className="rounded-md border border-luxury-gold/25 bg-luxury-gold/15 px-2 py-1 text-luxury-gold">📅 Reservation required</span>
                               )}
                             </div>
                           </div>
@@ -852,22 +745,22 @@ export default function AdminDashboard() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                   <label className="block text-xs font-medium text-gray-500 mb-2">Phone Number</label>
-                  <input type="tel" value={currentHotel.contact.phone} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, phone: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                  <input type="tel" value={currentHotel.contact.phone} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, phone: e.target.value } })} className="input-admin" />
                 </div>
                 
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                   <label className="block text-xs font-medium text-gray-500 mb-2">Email</label>
-                  <input type="email" value={currentHotel.contact.email} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, email: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                  <input type="email" value={currentHotel.contact.email} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, email: e.target.value } })} className="input-admin" />
                 </div>
                 
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                   <label className="block text-xs font-medium text-gray-500 mb-2">Emergency Phone</label>
-                  <input type="tel" value={currentHotel.contact.emergencyPhone} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, emergencyPhone: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                  <input type="tel" value={currentHotel.contact.emergencyPhone} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, emergencyPhone: e.target.value } })} className="input-admin" />
                 </div>
                 
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                   <label className="block text-xs font-medium text-gray-500 mb-2">Address</label>
-                  <textarea value={currentHotel.contact.address} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, address: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" rows={3} />
+                  <textarea value={currentHotel.contact.address} onChange={(e) => updateHotelSettings(selectedHotel, { contact: { ...currentHotel.contact, address: e.target.value } })} className="input-admin" rows={3} />
                 </div>
               </div>
             </motion.div>
@@ -889,8 +782,8 @@ export default function AdminDashboard() {
                 </div>
                 {currentHotel.wifi.available && (
                   <div className="space-y-3">
-                    <input type="text" placeholder="WiFi Password" value={currentHotel.wifi.password || ''} onChange={(e) => updateHotelSettings(selectedHotel, { wifi: { ...currentHotel.wifi, password: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                    <input type="text" placeholder="Connection Instructions" value={currentHotel.wifi.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { wifi: { ...currentHotel.wifi, instructions: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                    <input type="text" placeholder="WiFi Password" value={currentHotel.wifi.password || ''} onChange={(e) => updateHotelSettings(selectedHotel, { wifi: { ...currentHotel.wifi, password: e.target.value } })} className="input-admin" />
+                    <input type="text" placeholder="Connection Instructions" value={currentHotel.wifi.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { wifi: { ...currentHotel.wifi, instructions: e.target.value } })} className="input-admin" />
                   </div>
                 )}
               </div>
@@ -907,8 +800,8 @@ export default function AdminDashboard() {
                 </div>
                 {currentHotel.parking.available && (
                   <div className="space-y-3">
-                    <input type="text" placeholder="Parking Price" value={currentHotel.parking.price || ''} onChange={(e) => updateHotelSettings(selectedHotel, { parking: { ...currentHotel.parking, price: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                    <input type="text" placeholder="Parking Instructions" value={currentHotel.parking.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { parking: { ...currentHotel.parking, instructions: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                    <input type="text" placeholder="Parking Price" value={currentHotel.parking.price || ''} onChange={(e) => updateHotelSettings(selectedHotel, { parking: { ...currentHotel.parking, price: e.target.value } })} className="input-admin" />
+                    <input type="text" placeholder="Parking Instructions" value={currentHotel.parking.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { parking: { ...currentHotel.parking, instructions: e.target.value } })} className="input-admin" />
                   </div>
                 )}
               </div>
@@ -920,8 +813,8 @@ export default function AdminDashboard() {
                     <span>🏨</span><span>Check-in</span>
                   </h4>
                   <div className="space-y-3">
-                    <input type="time" value={currentHotel.checkIn.time} onChange={(e) => updateHotelSettings(selectedHotel, { checkIn: { ...currentHotel.checkIn, time: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                    <input type="text" placeholder="Check-in Instructions" value={currentHotel.checkIn.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { checkIn: { ...currentHotel.checkIn, instructions: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                    <input type="time" value={currentHotel.checkIn.time} onChange={(e) => updateHotelSettings(selectedHotel, { checkIn: { ...currentHotel.checkIn, time: e.target.value } })} className="input-admin" />
+                    <input type="text" placeholder="Check-in Instructions" value={currentHotel.checkIn.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { checkIn: { ...currentHotel.checkIn, instructions: e.target.value } })} className="input-admin" />
                   </div>
                 </div>
 
@@ -930,8 +823,8 @@ export default function AdminDashboard() {
                     <span>🚪</span><span>Check-out</span>
                   </h4>
                   <div className="space-y-3">
-                    <input type="time" value={currentHotel.checkOut.time} onChange={(e) => updateHotelSettings(selectedHotel, { checkOut: { ...currentHotel.checkOut, time: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
-                    <input type="text" placeholder="Check-out Instructions" value={currentHotel.checkOut.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { checkOut: { ...currentHotel.checkOut, instructions: e.target.value } })} className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all" />
+                    <input type="time" value={currentHotel.checkOut.time} onChange={(e) => updateHotelSettings(selectedHotel, { checkOut: { ...currentHotel.checkOut, time: e.target.value } })} className="input-admin" />
+                    <input type="text" placeholder="Check-out Instructions" value={currentHotel.checkOut.instructions || ''} onChange={(e) => updateHotelSettings(selectedHotel, { checkOut: { ...currentHotel.checkOut, instructions: e.target.value } })} className="input-admin" />
                   </div>
                 </div>
               </div>
@@ -962,9 +855,9 @@ export default function AdminDashboard() {
               </div>
 
               {/* ── Add new attraction form ─────────────────────────────────────── */}
-              <div className="rounded-xl p-5 border border-indigo-500/25 space-y-4" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(6,182,212,0.05) 100%)' }}>
+              <div className="luxury-card space-y-4 border border-luxury-gold/20 p-5">
                 <h4 className="font-semibold flex items-center space-x-2 text-white text-sm">
-                  <span className="w-7 h-7 rounded-lg bg-indigo-500/20 flex items-center justify-center text-base">🗺️</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-luxury-gold/20 text-base">🗺️</span>
                   <span>Add New Attraction</span>
                 </h4>
 
@@ -974,12 +867,12 @@ export default function AdminDashboard() {
                     placeholder="Attraction name *"
                     value={newAttraction.attraction_name}
                     onChange={e => setNewAttraction(p => ({ ...p, attraction_name: e.target.value }))}
-                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin"
                   />
                   <select
                     value={newAttraction.category}
                     onChange={e => setNewAttraction(p => ({ ...p, category: e.target.value }))}
-                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin"
                   >
                     {['cultural','nature','adventure','entertainment','shopping','restaurant','cafe'].map(c => (
                       <option key={c} value={c} className="bg-gray-900 capitalize">{c.charAt(0).toUpperCase()+c.slice(1)}</option>
@@ -990,28 +883,28 @@ export default function AdminDashboard() {
                     placeholder="Distance (e.g. 2 km)"
                     value={newAttraction.distance}
                     onChange={e => setNewAttraction(p => ({ ...p, distance: e.target.value }))}
-                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin"
                   />
                   <input
                     type="text"
                     placeholder="Duration (e.g. 1-2 hours)"
                     value={newAttraction.estimated_duration}
                     onChange={e => setNewAttraction(p => ({ ...p, estimated_duration: e.target.value }))}
-                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin"
                   />
                   <input
                     type="text"
                     placeholder="Price range (e.g. Free, 10-20 TND)"
                     value={newAttraction.price_range}
                     onChange={e => setNewAttraction(p => ({ ...p, price_range: e.target.value }))}
-                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin"
                   />
                   <input
                     type="text"
                     placeholder="Transportation (e.g. Taxi, Walking)"
                     value={newAttraction.transportation}
                     onChange={e => setNewAttraction(p => ({ ...p, transportation: e.target.value }))}
-                    className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin"
                   />
                 </div>
 
@@ -1020,7 +913,7 @@ export default function AdminDashboard() {
                   value={newAttraction.description}
                   onChange={e => setNewAttraction(p => ({ ...p, description: e.target.value }))}
                   rows={3}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all resize-none"
+                  className="input-admin w-full resize-none"
                 />
 
                 {/* Image URL input with live thumbnail preview */}
@@ -1030,7 +923,7 @@ export default function AdminDashboard() {
                     placeholder="Photo URL (e.g. https://upload.wikimedia.org/…) — optional"
                     value={newAttraction.image_url}
                     onChange={e => setNewAttraction(p => ({ ...p, image_url: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                    className="input-admin w-full"
                   />
                   {newAttraction.image_url && (
                     <div className="relative h-32 w-full overflow-hidden rounded-xl border border-white/10">
@@ -1048,8 +941,7 @@ export default function AdminDashboard() {
                 <button
                   onClick={addAttraction}
                   disabled={!newAttraction.attraction_name || !newAttraction.category || attractionSaving}
-                  className="flex items-center space-x-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)', boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}
+                  className="btn-luxury-primary flex items-center space-x-2 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {attractionSaving
                     ? <RefreshCw className="w-4 h-4 animate-spin" />
@@ -1138,7 +1030,7 @@ export default function AdminDashboard() {
                                       ? (({ [a.id]: _, ...rest }) => rest)(prev)
                                       : { ...prev, [a.id]: a.image_url || '' }
                                   )}
-                                  className="p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all text-xs"
+                                  className="rounded-lg p-1.5 text-xs text-gray-500 transition-all hover:bg-luxury-gold/10 hover:text-luxury-gold"
                                   title={a.image_url ? 'Change photo' : 'Add photo'}
                                 >
                                   📷
@@ -1155,14 +1047,14 @@ export default function AdminDashboard() {
 
                             {/* Inline photo editor — shown when 📷 is clicked */}
                             {photoEditing[a.id] !== undefined && (
-                              <div className="mt-2 p-3 bg-white/5 rounded-xl border border-indigo-500/30 space-y-2">
-                                <p className="text-xs text-indigo-300 font-medium">Paste a photo URL for this attraction:</p>
+                              <div className="mt-2 space-y-2 rounded-xl border border-luxury-gold/30 bg-white/5 p-3">
+                                <p className="text-xs font-medium text-luxury-gold">Paste a photo URL for this attraction:</p>
                                 <input
                                   type="url"
                                   placeholder="https://upload.wikimedia.org/… or any image URL"
                                   value={photoEditing[a.id]}
                                   onChange={e => setPhotoEditing(prev => ({ ...prev, [a.id]: e.target.value }))}
-                                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-gray-500 focus:ring-2 focus:ring-indigo-500/40 outline-none transition-all"
+                                  className="input-admin"
                                 />
                                 {photoEditing[a.id] && (
                                   <div className="relative h-28 w-full overflow-hidden rounded-lg border border-white/10">
@@ -1178,8 +1070,7 @@ export default function AdminDashboard() {
                                 <div className="flex gap-2">
                                   <button
                                     onClick={() => saveAttractionPhoto(a)}
-                                    className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"
-                                    style={{ background: 'linear-gradient(135deg, #6366F1, #06B6D4)' }}
+                                    className="btn-luxury-primary !px-3 !py-1.5 text-xs"
                                   >
                                     Save Photo
                                   </button>
@@ -1245,7 +1136,7 @@ export default function AdminDashboard() {
                               {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
                             </span>
                           </div>
-                          <p className="text-sm text-indigo-300 font-medium mt-1">{r.event_title}</p>
+                          <p className="mt-1 text-sm font-medium text-luxury-gold">{r.event_title}</p>
                           <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-500">
                             <span className="bg-white/10 px-2 py-1 rounded-md">📅 {r.event_date}</span>
                             {r.event_time && <span className="bg-white/10 px-2 py-1 rounded-md">🕐 {r.event_time}</span>}
@@ -1262,7 +1153,7 @@ export default function AdminDashboard() {
                           <select
                             value={r.status}
                             onChange={(e) => handleStatusChange(r.id, e.target.value)}
-                            className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 outline-none transition-all"
+                            className="input-admin"
                           >
                             <option value="pending">Pending</option>
                             <option value="confirmed">Confirmed</option>
@@ -1278,25 +1169,37 @@ export default function AdminDashboard() {
           )}
         </motion.div>
 
-        {/* Preview Footer */}
-        <div className="mt-6 relative bg-gray-900/70 backdrop-blur-xl border border-white/10 rounded-2xl p-5" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05)' }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Preview Changes</h3>
-              <p className="text-xs text-gray-400 mt-0.5">See how guests experience your hotel</p>
-            </div>
-            <a
-              href={`/hotel/${selectedHotel}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-5 py-2.5 rounded-xl hover:shadow-lg hover:shadow-blue-500/20 transition-all flex items-center space-x-2 text-sm font-medium"
-            >
-              <Eye className="w-4 h-4" />
-              <span>Preview Hotel</span>
-            </a>
+        <div className="admin-content-panel mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-luxury-gold">Preview guest experience</h3>
+            <p className="mt-0.5 text-xs text-luxury-muted">Open the live concierge for {currentHotel.name}</p>
           </div>
+          <a
+            href={`/hotel/${selectedHotel}?preview=admin`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-luxury-outline inline-flex items-center justify-center gap-2 text-sm"
+          >
+            <Eye className="h-4 w-4" />
+            Preview Hotel
+          </a>
         </div>
-      </div>
+    </AdminShell>
+  )
+}
+
+function DashboardLoadingFallback() {
+  return (
+    <div className="luxury-page flex min-h-screen items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-luxury-gold/30 border-t-luxury-gold" />
     </div>
+  )
+}
+
+export default function AdminDashboard() {
+  return (
+    <Suspense fallback={<DashboardLoadingFallback />}>
+      <AdminDashboardPage />
+    </Suspense>
   )
 }

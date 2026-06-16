@@ -1,0 +1,103 @@
+@startuml
+' Layout UML classique :
+'   ACTEURS à gauche  |  CAS D''UTILISATION à droite (colonne)
+'   Frontière du système autour des cas uniquement
+
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 10
+skinparam defaultFontSize 13
+skinparam nodesep 15
+skinparam ranksep 25
+
+title Figure 2.x - Diagramme de cas d''utilisation global\nGuide Touristique Intelligent
+
+actor Visiteur as visiteur
+actor "Administrateur\nde l''hôtel" as admin
+actor "Service météorologique\n(Open-Meteo)" as meteo
+actor "Service IA\n(Ollama)" as ia
+
+rectangle "Guide Touristique Intelligent" {
+
+  ' ── Colonne visiteur ──
+  usecase "Choisir un hôtel" as v1
+  usecase "Consulter les informations\nde l''hôtel" as v2
+  usecase "Consulter les conditions\nmétéorologiques" as v3
+  usecase "Interagir avec l''assistant\nintelligent" as v4
+  usecase "Obtenir des recommandations\ntouristiques" as v5
+  usecase "Obtenir un itinéraire vers\nune attraction" as v6
+
+  v1 -[hidden]down-> v2
+  v2 -[hidden]down-> v3
+  v3 -[hidden]down-> v4
+  v4 -[hidden]down-> v5
+  v5 -[hidden]down-> v6
+
+  ' ── Colonne admin (à droite de la colonne visiteur) ──
+  usecase "Accéder au dashboard\nadministrateur" as a1
+  usecase "S''authentifier" as a2
+  usecase "Gérer les informations\nde l''hôtel" as a3
+  usecase "Gérer les points d''intérêt\n(POI)" as a4
+  usecase "Gérer les événements\net réservations" as a5
+  usecase "Consulter les statistiques\net analytics" as a6
+
+  v1 -[hidden]right-> a1
+  a1 -[hidden]down-> a2
+  a2 -[hidden]down-> a3
+  a3 -[hidden]down-> a4
+  a4 -[hidden]down-> a5
+  a5 -[hidden]down-> a6
+}
+
+' Acteurs à gauche des colonnes
+visiteur -[hidden]right-> v1
+admin -[hidden]right-> a1
+visiteur -[hidden]down-> admin
+
+' Services externes à droite des cas concernés
+v3 -[hidden]right-> meteo
+v4 -[hidden]right-> ia
+
+' ── Visiteur → cas ──
+visiteur --> v1
+visiteur --> v2
+visiteur --> v3
+visiteur --> v4
+
+' ── Admin → cas ──
+admin --> a1
+admin --> a3
+admin --> a4
+admin --> a5
+admin --> a6
+
+' ── Services externes ──
+v3 --> meteo
+v4 --> ia
+
+' ── Relations UML ──
+v5 ..> v4 : <<extend>>
+v6 ..> v4 : <<extend>>
+a1 ..> a2 : <<include>>
+
+note right of v1
+  Infos et météo nécessitent
+  un hôtel sélectionné
+end note
+
+note right of v4
+  Inclut analyse de la requête
+  et génération de réponse
+end note
+
+note right of v6
+  Lien Google Maps
+  (pas de carte intégrée)
+end note
+
+note right of a1
+  Authentification requise
+end note
+
+@enduml

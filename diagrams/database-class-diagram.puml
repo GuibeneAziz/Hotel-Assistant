@@ -1,0 +1,129 @@
+@startuml
+' Database schema diagram (migrations + inferred analytics tables)
+skinparam classAttributeIconSize 0
+
+class hotels {
+  +id: TEXT
+  +hotelId: TEXT
+  +name: TEXT
+  +location: TEXT
+  +description: TEXT
+  +imageUrl: TEXT
+  +color: TEXT
+  +latitude: DOUBLE
+  +longitude: DOUBLE
+  +createdAt: TIMESTAMP
+  +updatedAt: TIMESTAMP
+}
+
+class hotel_settings {
+  +id: SERIAL
+  +hotelId: TEXT
+  +breakfastStart: TEXT
+  +breakfastEnd: TEXT
+  +breakfastAvailable: BOOLEAN
+  +lunchStart: TEXT
+  +lunchEnd: TEXT
+  +lunchAvailable: BOOLEAN
+  +dinnerStart: TEXT
+  +dinnerEnd: TEXT
+  +dinnerAvailable: BOOLEAN
+  +spaAvailable: BOOLEAN
+  +spaOpenTime: TEXT
+  +spaCloseTime: TEXT
+  +spaTreatments: TEXT[]
+  +poolAvailable: BOOLEAN
+  +poolOpenTime: TEXT
+  +poolCloseTime: TEXT
+  +gymAvailable: BOOLEAN
+  +gymOpenTime: TEXT
+  +gymCloseTime: TEXT
+  +kidsClubAvailable: BOOLEAN
+  +kidsClubOpenTime: TEXT
+  +kidsClubCloseTime: TEXT
+  +kidsClubAgeRange: TEXT
+  +phone: TEXT
+  +email: TEXT
+  +address: TEXT
+  +emergencyPhone: TEXT
+  +wifiAvailable: BOOLEAN
+  +wifiPassword: TEXT
+  +wifiInstructions: TEXT
+  +parkingAvailable: BOOLEAN
+  +parkingPrice: TEXT
+  +parkingInstructions: TEXT
+  +checkinTime: TEXT
+  +checkinInstructions: TEXT
+  +checkoutTime: TEXT
+  +checkoutInstructions: TEXT
+  +createdAt: TIMESTAMP
+  +updatedAt: TIMESTAMP
+}
+
+class special_events {
+  +id: SERIAL
+  +hotelId: TEXT
+  +title: TEXT
+  +description: TEXT
+  +eventDate: TEXT
+  +eventTime: TEXT
+  +location: TEXT
+  +price: TEXT
+  +createdAt: TIMESTAMP
+  +updatedAt: TIMESTAMP
+}
+
+class activities {
+  +id: SERIAL
+  +hotelId: TEXT
+  +category: TEXT
+  +activityName: TEXT
+  +createdAt: TIMESTAMP
+}
+
+' -- Inferred analytics tables used by `lib/analytics.ts`
+class guest_profiles {
+  +id: SERIAL
+  +session_id: TEXT
+  +hotel_id: TEXT
+  +age_range: TEXT
+  +nationality: TEXT
+  +travel_purpose: TEXT
+  +group_type: TEXT
+  +preferred_language: TEXT
+  +first_visit: TIMESTAMP
+  +last_visit: TIMESTAMP
+  +total_interactions: INTEGER
+}
+
+class question_categories {
+  +hotel_id: TEXT
+  +category: TEXT
+  +subcategory: TEXT
+  +question_count: INTEGER
+  +last_asked: TIMESTAMP
+  +date: DATE
+  +age_18_25: INTEGER
+  +age_26_35: INTEGER
+  +age_36_50: INTEGER
+  +age_50_plus: INTEGER
+}
+
+class popular_topics {
+  +hotel_id: TEXT
+  +topic: TEXT
+  +mention_count: INTEGER
+  +date: DATE
+  +positive_sentiment: INTEGER
+  +negative_sentiment: INTEGER
+}
+
+' --- DB relationships ---
+hotels "1" -- "0..1" hotel_settings : has
+hotels "1" -- "*" special_events : has
+hotels "1" -- "*" activities : has
+hotels "1" -- "*" guest_profiles : has
+hotels "1" -- "*" question_categories : records
+hotels "1" -- "*" popular_topics : records
+
+@enduml

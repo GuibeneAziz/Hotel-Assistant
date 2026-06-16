@@ -35,9 +35,9 @@ export default function LanguageSwitcher() {
         onClick={() => setOpen(o => !o)}
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
-        className="flex items-center space-x-2 px-3 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-sm font-medium text-gray-300"
+        className="flex items-center space-x-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-gray-300 transition-all hover:border-luxury-gold/30 hover:bg-luxury-gold/10"
       >
-        <Globe className="w-4 h-4 text-gray-400 shrink-0" />
+        <Globe className="w-4 h-4 shrink-0 text-luxury-gold" />
         <span className="text-base leading-none">{current.flag}</span>
         <span className="hidden sm:inline">{current.label}</span>
         <motion.svg
@@ -58,8 +58,7 @@ export default function LanguageSwitcher() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.96 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 overflow-hidden z-50"
-            style={{ background: 'rgba(9,9,11,0.95)', backdropFilter: 'blur(20px)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+            className="luxury-glass absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 shadow-xl"
           >
             {LANGUAGES.map((lang) => (
               <motion.button
@@ -68,14 +67,14 @@ export default function LanguageSwitcher() {
                 whileHover={{ backgroundColor: 'rgba(255,255,255,0.07)' }}
                 className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${
                   lang.code === language
-                    ? 'text-white bg-white/[0.07]'
+                    ? 'bg-luxury-gold/10 text-luxury-gold'
                     : 'text-gray-400'
                 }`}
               >
                 <span className="text-base w-5 text-center">{lang.flag}</span>
                 <span className="font-medium">{lang.label}</span>
                 {lang.code === language && (
-                  <svg className="w-3.5 h-3.5 text-indigo-400 ml-auto shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg className="ml-auto h-3.5 w-3.5 shrink-0 text-luxury-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                 )}

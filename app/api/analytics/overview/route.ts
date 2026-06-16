@@ -52,19 +52,38 @@ export async function GET(request: Request) {
       const interactionResult = await client.query(interactionQuery, guestParams)
       const totalInteractions = parseInt(interactionResult.rows[0]?.total || '0')
 
-      // Most active hotel (if not filtering by hotel)
+      // Per-hotel comparison (when not filtering by a specific hotel)
       let mostActiveHotel = null
+      let hotelComparison: any[] = []
       if (!hotelId) {
-        const hotelQuery = `
-          SELECT hotel_id, COUNT(*) as guest_count 
-          FROM guest_profiles 
-          WHERE first_visit >= $1 
-          GROUP BY hotel_id 
-          ORDER BY guest_count DESC 
-          LIMIT 1
+        const hotelStatsQuery = `
+          SELECT
+            gp.hotel_id,
+            COUNT(DISTINCT gp.session_id) AS guests,
+            SUM(gp.total_interactions) AS interactions,
+            ROUND(AVG(gp.total_interactions), 1) AS avg_interactions
+          FROM guest_profiles gp
+          WHERE gp.first_visit >= $1
+          GROUP BY gp.hotel_id
+          ORDER BY guests DESC
         `
-        const hotelResult = await client.query(hotelQuery, [startDate])
-        mostActiveHotel = hotelResult.rows[0]?.hotel_id || null
+        const hotelStatsResult = await client.query(hotelStatsQuery, [startDate])
+
+        const HOTEL_NAMES: Record<string, string> = {
+          'sindbad-hammamet': 'Sindbad Hotel',
+          'villa-didon-carthage': 'Villa Didon',
+          'belvedere-fourati-tunis': 'Belvédère Fourati',
+        }
+
+        hotelComparison = hotelStatsResult.rows.map(row => ({
+          hotelId: row.hotel_id,
+          name: HOTEL_NAMES[row.hotel_id] ?? row.hotel_id,
+          guests: parseInt(row.guests),
+          interactions: parseInt(row.interactions || 0),
+          avgInteractions: parseFloat(row.avg_interactions || 0),
+        }))
+
+        mostActiveHotel = hotelComparison[0]?.hotelId || null
       }
 
       // Top question category
@@ -89,6 +108,7 @@ export async function GET(request: Request) {
           totalGuests,
           totalInteractions,
           mostActiveHotel,
+          hotelComparison,
           topCategory,
           avgInteractions: parseFloat(avgInteractions),
           timeRange

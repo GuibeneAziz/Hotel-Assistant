@@ -83,10 +83,36 @@ export async function GET(request: Request) {
         questions: parseInt(row.total)
       }))
 
-      // Peak hours (if we have hourly data - for now, mock it)
+      // Real peak hours from guest_profiles.last_visit timestamps
+      const peakHoursQuery = hotelId
+        ? `SELECT EXTRACT(HOUR FROM last_visit)::int AS hour, COUNT(*) AS interactions
+           FROM guest_profiles WHERE hotel_id = $1 AND last_visit >= $2
+           GROUP BY hour ORDER BY hour`
+        : `SELECT EXTRACT(HOUR FROM last_visit)::int AS hour, COUNT(*) AS interactions
+           FROM guest_profiles WHERE last_visit >= $1
+           GROUP BY hour ORDER BY hour`
+      const peakHoursResult = await client.query(peakHoursQuery, params)
+      const hoursMap: Record<number, number> = {}
+      for (const row of peakHoursResult.rows) {
+        hoursMap[row.hour] = parseInt(row.interactions)
+      }
       const peakHours = Array.from({ length: 24 }, (_, hour) => ({
         hour: `${hour.toString().padStart(2, '0')}:00`,
-        questions: Math.floor(Math.random() * 50) + 10 // Mock data for now
+        interactions: hoursMap[hour] ?? 0,
+      }))
+
+      // Popular topics
+      const topicsQuery = hotelId
+        ? `SELECT topic, SUM(mention_count) AS total FROM popular_topics
+           WHERE hotel_id = $1 AND date >= $2
+           GROUP BY topic ORDER BY total DESC LIMIT 12`
+        : `SELECT topic, SUM(mention_count) AS total FROM popular_topics
+           WHERE date >= $1
+           GROUP BY topic ORDER BY total DESC LIMIT 12`
+      const topicsResult = await client.query(topicsQuery, params)
+      const popularTopics = topicsResult.rows.map(row => ({
+        name: row.topic.replace(/_/g, ' '),
+        value: parseInt(row.total),
       }))
 
       return NextResponse.json({
@@ -95,7 +121,8 @@ export async function GET(request: Request) {
           questionCategories,
           topSubcategories,
           questionsOverTime,
-          peakHours
+          peakHours,
+          popularTopics,
         }
       })
 

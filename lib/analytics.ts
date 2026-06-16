@@ -29,7 +29,8 @@ export async function createOrUpdateGuestProfile(profile: GuestProfile) {
       ON CONFLICT (session_id) 
       DO UPDATE SET
         last_visit = NOW(),
-        total_interactions = guest_profiles.total_interactions + 1
+        total_interactions = guest_profiles.total_interactions + 1,
+        preferred_language = COALESCE($7, guest_profiles.preferred_language)
       RETURNING id
     `, [
       profile.sessionId,

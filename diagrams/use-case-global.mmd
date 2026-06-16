@@ -1,0 +1,48 @@
+---
+title: Global Use Case Diagram
+---
+
+```mermaid
+flowchart LR
+  subgraph Guest Side
+    G[Guest]
+    G -->|Choose hotel| Landing[Landing page]
+    G -->|Chat with AI assistant| Chatbot[Chatbot page]
+    G -->|View hotel info & weather| Chatbot
+  end
+
+  subgraph Admin Side
+    A[Admin]
+    A -->|Authenticate| AdminLogin[Admin login]
+    A -->|Manage hotel settings| Dashboard[Admin dashboard]
+    A -->|Review analytics| Dashboard
+  end
+
+  subgraph Backend
+    APIChat[/api/chat]
+    APISettings[/api/hotel-settings]
+    APILogin[/api/admin/login]
+    APIVerify[/api/admin/verify]
+  end
+
+  subgraph Services
+    DB[(PostgreSQL)]
+    AI[(Groq / LLM)]
+    Weather[(Open-Meteo)]
+    Cache[(Redis cache)]
+  end
+
+  Chatbot -->|POST chat message| APIChat
+  Landing -->|Fetch hotel list| APISettings
+
+  APIChat --> DB
+  APIChat --> AI
+  APIChat --> Weather
+  APIChat --> Cache
+  APISettings --> DB
+  APILogin --> DB
+  APIVerify --> DB
+  Dashboard --> APISettings
+  AdminLogin --> APILogin
+  Dashboard --> APIVerify
+```
