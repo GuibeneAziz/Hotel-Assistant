@@ -2,35 +2,13 @@
 // Converts hotel data into structured knowledge for AI
 
 import { buildClusteredAttractionsContext, parseWeatherConditions, type ClusteringGuestProfile, type ClusteringWeather } from './attraction-clustering'
+import { normalizeEventDate } from './event-dates'
 
 function formatDateOnly(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
-}
-
-function normalizeKnowledgeDate(value: unknown): string | null {
-  if (!value) {
-    return null
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    const isoDateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/)
-    if (isoDateMatch) {
-      return isoDateMatch[1]
-    }
-
-    const parsed = new Date(trimmed)
-    return Number.isNaN(parsed.getTime()) ? null : formatDateOnly(parsed)
-  }
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : formatDateOnly(value)
-  }
-
-  return null
 }
 
 function isDateOrEventQuery(queryLower: string): boolean {
@@ -112,6 +90,11 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
     if (hotelSettings.pool.available) {
       knowledge.push(`  Hours: ${hotelSettings.pool.openTime} - ${hotelSettings.pool.closeTime}`)
     }
+    if (hotelSettings.pool.barOpenTime && hotelSettings.pool.barCloseTime) {
+      knowledge.push(`Infinity Bar (pool bar): OPEN`)
+      knowledge.push(`  Hours: ${hotelSettings.pool.barOpenTime} - ${hotelSettings.pool.barCloseTime}`)
+      knowledge.push(`  Menu: not available in this system — guests must ask the front desk for the drink menu`)
+    }
   }
 
   if (hotelSettings?.gym) {
@@ -175,7 +158,7 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
     const today = formatDateOnly(new Date())
     const normalizedEvents = hotelSettings.specialEvents.map((event: any) => ({
       ...event,
-      normalizedDate: normalizeKnowledgeDate(event.date),
+      normalizedDate: normalizeEventDate(event.date),
     }))
     
     // Today's events
@@ -211,20 +194,25 @@ The AI assistant can ONLY provide information, not make bookings or arrangements
     }
 
     if (todayEvents.length === 0 && upcomingEvents.length === 0) {
-      knowledge.push(`ALL SCHEDULED EVENTS:`)
-      normalizedEvents.slice(0, 5).forEach((event: any) => {
-        knowledge.push(`  - ${event.title}${event.normalizedDate ? ` on ${event.normalizedDate}` : ''}`)
-        if (event.time) {
-          knowledge.push(`    Time: ${event.time}`)
-        }
-        if (event.location) {
-          knowledge.push(`    Location: ${event.location}`)
-        }
-        knowledge.push(`    Price: ${event.price || 'Free'}`)
-        if (event.description) {
-          knowledge.push(`    Details: ${event.description}`)
-        }
-      })
+      const activeEvents = normalizedEvents.filter(
+        (event: any) => event.normalizedDate && event.normalizedDate >= today
+      )
+      if (activeEvents.length > 0) {
+        knowledge.push(`ALL SCHEDULED EVENTS:`)
+        activeEvents.slice(0, 5).forEach((event: any) => {
+          knowledge.push(`  - ${event.title}${event.normalizedDate ? ` on ${event.normalizedDate}` : ''}`)
+          if (event.time) {
+            knowledge.push(`    Time: ${event.time}`)
+          }
+          if (event.location) {
+            knowledge.push(`    Location: ${event.location}`)
+          }
+          knowledge.push(`    Price: ${event.price || 'Free'}`)
+          if (event.description) {
+            knowledge.push(`    Details: ${event.description}`)
+          }
+        })
+      }
     }
   } else {
     knowledge.push(`No special events are currently scheduled.`)
@@ -415,7 +403,9 @@ export function extractRelevantContext(query: string, fullKnowledge: string): st
     'cafe': ['NEARBY ATTRACTIONS'],
     'café': ['NEARBY ATTRACTIONS'],
     'coffee': ['NEARBY ATTRACTIONS'],
-    'bar': ['NEARBY ATTRACTIONS'],
+    'bar': ['FACILITIES'],
+    'cocktail': ['FACILITIES'],
+    'drinks': ['FACILITIES'],
     'shopping': ['NEARBY ATTRACTIONS'],
     'shop': ['NEARBY ATTRACTIONS'],
     'beach': ['NEARBY ATTRACTIONS'],

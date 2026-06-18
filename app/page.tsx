@@ -118,6 +118,7 @@ export default function HomePage() {
             alt="Luxury resort"
             fill
             priority
+            unoptimized
             className="object-cover object-center"
             sizes="100vw"
           />
@@ -229,6 +230,7 @@ export default function HomePage() {
                     src={hotel.image}
                     alt={hotel.name}
                     fill
+                    unoptimized
                     className="object-cover transition-transform duration-700 group-hover:scale-105"
                     sizes="(max-width: 767px) 100vw, 33vw"
                   />
@@ -328,7 +330,7 @@ export default function HomePage() {
                 animate={{ scale: [1, 1.06, 1] }}
                 transition={{ repeat: Infinity, duration: 1.5 }}
               >
-                <Image src={selectedHotel.image} alt={selectedHotel.name} fill className="object-cover" sizes="80px" />
+                <Image src={selectedHotel.image} alt={selectedHotel.name} fill unoptimized className="object-cover" sizes="80px" />
               </motion.div>
               <p className="mt-5 font-serif text-lg font-semibold text-white">{t('loadingTitle')}</p>
               <p className="mt-1 text-sm text-luxury-muted">

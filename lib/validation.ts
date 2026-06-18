@@ -99,7 +99,7 @@ export const chatMessageSchema = z.object({
   hotelSettings: z.any().optional(),
   hotelData: z.any().optional(),
   weather: z.any().optional(),
-  sessionId: z.string().optional(),
+  sessionId: z.string().nullish(),
   conversationHistory: z.array(z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string()

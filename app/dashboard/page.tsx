@@ -92,8 +92,8 @@ const defaultSettings: { [key: string]: HotelSettings } = {
     pool: {
       openTime: '06:00',
       closeTime: '22:00',
-      barOpenTime: '10:00',
-      barCloseTime: '23:00',
+      barOpenTime: '06:00',
+      barCloseTime: '22:00',
       available: true,
       seasonLabel: 'SUMMER SEASON',
       maintenanceNote: 'Maintenance scheduled for next Tuesday, 04:00 – 08:00.',
@@ -267,7 +267,7 @@ function AdminDashboardPage() {
     loadSettings()
   }, [])
 
-  const saveSettings = async () => {
+  const persistHotelSettings = async (hotelId: string, hotelSettings: HotelSettings) => {
     setSaveStatus('saving')
     try {
       const token = localStorage.getItem('adminToken')
@@ -277,19 +277,34 @@ function AdminDashboardPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ hotelId: selectedHotel, settings: settings[selectedHotel] })
+        body: JSON.stringify({ hotelId, settings: hotelSettings })
       })
 
       const result = await response.json()
       if (!result.success) throw new Error(result.message || 'Failed to save settings')
 
+      const reload = await fetch('/api/hotel-settings')
+      if (reload.ok) {
+        const fresh = await reload.json()
+        if (fresh.success && fresh.data) {
+          setSettings(fresh.data)
+        }
+      }
+
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2000)
+      return true
     } catch (error) {
       console.error('Error saving settings:', error)
       setSaveStatus('idle')
       alert('Error saving settings. Please try again.')
+      return false
     }
+  }
+
+  const saveSettings = async () => {
+    if (!settings[selectedHotel]) return
+    await persistHotelSettings(selectedHotel, settings[selectedHotel])
   }
 
   const updateHotelSettings = (hotelId: string, updates: Partial<HotelSettings>) => {
@@ -462,7 +477,7 @@ function AdminDashboardPage() {
     }
   }
 
-  const addSpecialEvent = () => {
+  const addSpecialEvent = async () => {
     if (!newEvent.title || !newEvent.date) return
     
     const event: SpecialEvent = {
@@ -476,18 +491,26 @@ function AdminDashboardPage() {
       imageUrl: newEvent.imageUrl || '',
       requiresReservation: newEvent.requiresReservation ?? false,
     }
-    
-    updateHotelSettings(selectedHotel, {
-      specialEvents: [...currentHotel.specialEvents, event]
-    })
-    
+
+    const nextSettings: HotelSettings = {
+      ...currentHotel,
+      specialEvents: [...currentHotel.specialEvents, event],
+    }
+
+    updateHotelSettings(selectedHotel, { specialEvents: nextSettings.specialEvents })
     setNewEvent({ title: '', description: '', date: '', time: '', location: '', price: '', imageUrl: '', requiresReservation: false })
+
+    await persistHotelSettings(selectedHotel, nextSettings)
   }
 
-  const removeSpecialEvent = (eventId: string) => {
-    updateHotelSettings(selectedHotel, {
-      specialEvents: currentHotel.specialEvents.filter(event => event.id !== eventId)
-    })
+  const removeSpecialEvent = async (eventId: string) => {
+    const nextSettings: HotelSettings = {
+      ...currentHotel,
+      specialEvents: currentHotel.specialEvents.filter(event => event.id !== eventId),
+    }
+
+    updateHotelSettings(selectedHotel, { specialEvents: nextSettings.specialEvents })
+    await persistHotelSettings(selectedHotel, nextSettings)
   }
 
   const resetOperatingHours = () => {
@@ -674,6 +697,7 @@ function AdminDashboardPage() {
                   </div>
                 )}
                 <textarea placeholder="Event Description" value={newEvent.description} onChange={(e) => setNewEvent({...newEvent, description: e.target.value})} className="input-admin mt-3 w-full" rows={3} />
+                <p className="mt-2 text-xs text-slate-400">Events are saved automatically when you add or remove them.</p>
                 <div className="mt-3 flex items-center gap-3">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input

@@ -6,6 +6,8 @@
 
 /* ─── Sindbad Luxury design tokens ─── */
 :root {
+  --font-inter: 'Inter', sans-serif;
+  --font-playfair: 'Playfair Display', Georgia, serif;
   --luxury-bg: #121212;
   --luxury-surface: #1a1a1a;
   --luxury-card: #242424;
@@ -780,6 +782,7 @@ body {
   position: absolute;
   inset: -10% 0;
   will-change: transform;
+  overflow: hidden;
 }
 
 .lp-hero-overlay-left {

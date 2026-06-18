@@ -17,7 +17,7 @@ function generateCacheKey(
   userMessage: string,
   hotelContext: string
 ): string {
-  const provider = process.env.AI_PROVIDER || 'groq'
+  const provider = (process.env.AI_PROVIDER || 'groq').trim().toLowerCase()
   const model = provider === 'ollama'
     ? process.env.OLLAMA_MODEL || 'qwen2.5:7b'
     : 'llama-3.3-70b-versatile'
@@ -83,7 +83,7 @@ export async function generateResponse(
       }
     }
 
-    const aiProvider = process.env.AI_PROVIDER || 'groq'
+    const aiProvider = (process.env.AI_PROVIDER || 'groq').trim().toLowerCase()
     console.log('AI provider:', aiProvider)
     
     const systemPrompt = `You are a helpful, friendly hotel concierge AI assistant for a luxury hotel in Tunisia.
@@ -103,6 +103,8 @@ CRITICAL RULES - YOU MUST FOLLOW THESE STRICTLY:
 🚫 NEVER answer questions about services, facilities, or features not mentioned in the hotel data
 🚫 NEVER use placeholder text like "[phone number]" or "[email]" - always use the REAL values from the CONTACT INFORMATION section below
 🚫 If the information is not in the hotel data, say: "I don't have that information. Please contact the front desk." and include the REAL phone number from the hotel data if available.
+🚫 NEVER offer menus, drink lists, wine lists, or any catalog unless the full text is explicitly in the hotel data below
+🚫 NEVER ask "would you like the menu?" or offer to share documents you do not have — direct guests to the front desk instead
 
 WHAT YOU CANNOT DO (NEVER offer these services):
 ❌ You CANNOT book rooms, taxis, tours, or make any reservations

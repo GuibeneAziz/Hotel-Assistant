@@ -9,6 +9,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import GuestRegistrationForm, { GuestProfile } from '@/app/components/GuestRegistrationForm'
 import { useLanguage } from '@/lib/i18n'
 import LanguageSwitcher from '@/app/components/LanguageSwitcher'
+import { getTodayLocal, isUpcomingEvent, normalizeEventDate } from '@/lib/event-dates'
+import { fetchLiveWeather, type LiveWeather } from '@/lib/weather'
 
 interface Message {
   id: string
@@ -17,13 +19,7 @@ interface Message {
   timestamp: Date
 }
 
-interface WeatherData {
-  temperature: number
-  description: string
-  humidity: number
-  wind_speed: number
-  feels_like: number
-}
+type WeatherData = LiveWeather
 
 interface HotelPageState {
   showRegistration: boolean
@@ -191,36 +187,6 @@ function MapCard({
   )
 }
 
-function formatDateOnly(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function normalizeEventDate(value: unknown): string | null {
-  if (!value) {
-    return null
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    const isoDateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/)
-    if (isoDateMatch) {
-      return isoDateMatch[1]
-    }
-
-    const parsed = new Date(trimmed)
-    return Number.isNaN(parsed.getTime()) ? null : formatDateOnly(parsed)
-  }
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : formatDateOnly(value)
-  }
-
-  return null
-}
-
 // Map app languages to BCP-47 voice locales used by the Web Speech API
 const SPEECH_LOCALES: Record<string, string> = {
   en: 'en-US',
@@ -319,13 +285,11 @@ export default function HotelAssistant() {
     return () => container.removeEventListener('scroll', updateStickToBottom)
   }, [])
 
-  // Fire hotel-settings and weather in parallel on mount
-  useEffect(() => {
-    if (!hotelId || !hotel) return
-
-    const loadSettings = fetch('/api/hotel-settings')
-      .then(r => r.ok ? r.json() : null)
-      .then(result => {
+  const reloadHotelSettings = () => {
+    if (!hotelId) return Promise.resolve()
+    return fetch('/api/hotel-settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((result) => {
         if (result?.success && result.data?.[hotelId]) {
           setHotelSettings(result.data[hotelId])
         } else {
@@ -333,15 +297,33 @@ export default function HotelAssistant() {
         }
       })
       .catch(() => setHotelSettings(getDefaultHotelSettings(hotelId)))
+  }
 
-    const loadWeather = fetch(
-      `/api/weather?lat=${hotel.coordinates.lat}&lon=${hotel.coordinates.lon}`
-    )
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data && !data.error) setWeather(data) })
+  // Load hotel settings on mount and when the guest returns to the tab
+  useEffect(() => {
+    if (!hotelId || !hotel) return
+
+    void reloadHotelSettings()
+
+    const refreshOnFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void reloadHotelSettings()
+      }
+    }
+
+    window.addEventListener('focus', refreshOnFocus)
+    document.addEventListener('visibilitychange', refreshOnFocus)
+
+    const loadWeather = fetchLiveWeather(hotel.coordinates.lat, hotel.coordinates.lon)
+      .then(setWeather)
       .catch(() => {/* weather is optional – silently ignore */})
 
-    Promise.all([loadSettings, loadWeather])
+    void loadWeather
+
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus)
+      document.removeEventListener('visibilitychange', refreshOnFocus)
+    }
   }, [hotelId, hotel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -709,20 +691,14 @@ export default function HotelAssistant() {
     }
   }
 
-  // Compute upcoming events (within 10 days)
-  const today = normalizeEventDate(new Date())
+  // Show events from today through the next 60 days
+  const today = getTodayLocal()
   const upcomingEvents = (hotelSettings?.specialEvents || [])
     .map((event: any) => ({
       ...event,
       normalizedDate: normalizeEventDate(event.date),
     }))
-    .filter((event: any) => {
-      if (!event.normalizedDate || !today) return false
-      const eventDate = new Date(`${event.normalizedDate}T00:00:00`)
-      const currentDate = new Date(`${today}T00:00:00`)
-      const diffDays = (eventDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-      return diffDays >= -1 && diffDays <= 10
-    })
+    .filter((event: any) => event.normalizedDate && isUpcomingEvent(event.normalizedDate, today, 60))
 
   if (!hotel) {
     return (
@@ -788,7 +764,7 @@ export default function HotelAssistant() {
         <aside className="space-y-4">
           <div className="luxury-card overflow-hidden">
             <div className="relative h-52">
-              <Image src={hotel.image} alt={hotel.name} fill sizes="(max-width: 1023px) 100vw, 340px" className="object-cover" priority />
+              <Image src={hotel.image} alt={hotel.name} fill sizes="(max-width: 1023px) 100vw, 340px" className="object-cover" priority unoptimized />
               <div className="absolute inset-0 bg-gradient-to-t from-luxury-bg via-luxury-bg/40 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-5">
                 <p className="text-sm uppercase tracking-[0.3em] text-luxury-gold/80">{t('hotelAssistant')}</p>
@@ -909,6 +885,7 @@ export default function HotelAssistant() {
                                 fill
                                 className="object-cover"
                                 sizes="(max-width: 1024px) 100vw, 420px"
+                                unoptimized
                               />
                               </div>
                             </div>

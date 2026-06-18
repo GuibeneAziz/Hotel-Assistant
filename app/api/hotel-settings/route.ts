@@ -5,6 +5,7 @@ import { getAllHotelSettings, invalidateHotelSettingsCache } from '@/lib/db'
 import pool from '@/lib/db'
 import { verify } from 'jsonwebtoken'
 import { getEnv } from '@/lib/env'
+import { normalizeEventDate } from '@/lib/event-dates'
 
 const CACHE_KEY = 'hotel:settings:all'
 const CACHE_TTL = 3600 // 1 hour
@@ -109,6 +110,110 @@ export async function POST(request: NextRequest) {
         `, [settings.pool.available, t(settings.pool.openTime), t(settings.pool.closeTime), hotelId])
       }
 
+      // Update Infinity Bar (pool-side bar) — stored as its own facility row
+      if (settings.pool && (t(settings.pool.barOpenTime) || t(settings.pool.barCloseTime))) {
+        await client.query(`
+          INSERT INTO facilities (hotel_id, facility_type, facility_name, is_available, open_time, close_time)
+          VALUES ($1, 'bar', 'infinity_bar', $2, $3, $4)
+          ON CONFLICT (hotel_id, facility_type, facility_name)
+          DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            open_time = EXCLUDED.open_time,
+            close_time = EXCLUDED.close_time
+        `, [
+          hotelId,
+          settings.pool.available !== false,
+          t(settings.pool.barOpenTime),
+          t(settings.pool.barCloseTime),
+        ])
+      }
+
+      // Update contact information
+      if (settings.contact) {
+        const c = settings.contact
+        await client.query(`
+          INSERT INTO contact_info (hotel_id, phone, email, address, emergency_phone, updated_at)
+          VALUES ($1, $2, $3, $4, $5, NOW())
+          ON CONFLICT (hotel_id) DO UPDATE SET
+            phone = EXCLUDED.phone,
+            email = EXCLUDED.email,
+            address = EXCLUDED.address,
+            emergency_phone = EXCLUDED.emergency_phone,
+            updated_at = NOW()
+        `, [
+          hotelId,
+          c.phone || null,
+          c.email || null,
+          c.address || null,
+          c.emergencyPhone || null,
+        ])
+      }
+
+      // Update amenities (WiFi, parking, check-in/out)
+      if (settings.wifi) {
+        await client.query(`
+          INSERT INTO amenities (hotel_id, amenity_type, is_available, primary_value, instructions)
+          VALUES ($1, 'wifi', $2, $3, $4)
+          ON CONFLICT (hotel_id, amenity_type) DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            primary_value = EXCLUDED.primary_value,
+            instructions = EXCLUDED.instructions
+        `, [
+          hotelId,
+          settings.wifi.available,
+          settings.wifi.password || null,
+          settings.wifi.instructions || null,
+        ])
+      }
+
+      if (settings.parking) {
+        await client.query(`
+          INSERT INTO amenities (hotel_id, amenity_type, is_available, primary_value, instructions)
+          VALUES ($1, 'parking', $2, $3, $4)
+          ON CONFLICT (hotel_id, amenity_type) DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            primary_value = EXCLUDED.primary_value,
+            instructions = EXCLUDED.instructions
+        `, [
+          hotelId,
+          settings.parking.available,
+          settings.parking.price || null,
+          settings.parking.instructions || null,
+        ])
+      }
+
+      if (settings.checkIn) {
+        await client.query(`
+          INSERT INTO amenities (hotel_id, amenity_type, is_available, primary_value, instructions)
+          VALUES ($1, 'checkin', $2, $3, $4)
+          ON CONFLICT (hotel_id, amenity_type) DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            primary_value = EXCLUDED.primary_value,
+            instructions = EXCLUDED.instructions
+        `, [
+          hotelId,
+          true,
+          t(settings.checkIn.time),
+          settings.checkIn.instructions || null,
+        ])
+      }
+
+      if (settings.checkOut) {
+        await client.query(`
+          INSERT INTO amenities (hotel_id, amenity_type, is_available, primary_value, instructions)
+          VALUES ($1, 'checkout', $2, $3, $4)
+          ON CONFLICT (hotel_id, amenity_type) DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            primary_value = EXCLUDED.primary_value,
+            instructions = EXCLUDED.instructions
+        `, [
+          hotelId,
+          true,
+          t(settings.checkOut.time),
+          settings.checkOut.instructions || null,
+        ])
+      }
+
       // Update gym
       if (settings.gym && (t(settings.gym.openTime) || t(settings.gym.closeTime))) {
         await client.query(`
@@ -125,25 +230,57 @@ export async function POST(request: NextRequest) {
         `, [settings.kidsClub.available, t(settings.kidsClub.openTime), t(settings.kidsClub.closeTime), hotelId])
       }
 
-      // Sync special events: delete all then re-insert
+      // Sync special events: update existing rows by id, insert new ones, remove deleted
       if (settings.specialEvents !== undefined) {
-        await client.query('DELETE FROM special_events WHERE hotel_id = $1', [hotelId])
+        const keptIds: number[] = []
+
         for (const event of settings.specialEvents) {
           if (!event.title || !event.date) continue
-          await client.query(`
-            INSERT INTO special_events (hotel_id, title, description, event_date, event_time, location, price, image_url, requires_reservation)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          `, [
-            hotelId,
+
+          const eventDate = normalizeEventDate(event.date) || event.date
+          const numericId = /^\d+$/.test(String(event.id)) ? Number(event.id) : null
+          const params = [
             event.title,
             event.description || null,
-            event.date,
+            eventDate,
             t(event.time) ?? '00:00',
             event.location || null,
             event.price || null,
             event.imageUrl || null,
-            event.requiresReservation ?? false
-          ])
+            event.requiresReservation ?? false,
+          ]
+
+          if (numericId) {
+            const updated = await client.query(`
+              UPDATE special_events
+              SET title = $1, description = $2, event_date = $3, event_time = $4,
+                  location = $5, price = $6, image_url = $7, requires_reservation = $8
+              WHERE id = $9 AND hotel_id = $10
+              RETURNING id
+            `, [...params, numericId, hotelId])
+
+            if (updated.rowCount && updated.rowCount > 0) {
+              keptIds.push(numericId)
+              continue
+            }
+          }
+
+          const inserted = await client.query(`
+            INSERT INTO special_events (hotel_id, title, description, event_date, event_time, location, price, image_url, requires_reservation)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id
+          `, [hotelId, ...params])
+
+          keptIds.push(inserted.rows[0].id)
+        }
+
+        if (keptIds.length > 0) {
+          await client.query(
+            `DELETE FROM special_events WHERE hotel_id = $1 AND NOT (id = ANY($2::int[]))`,
+            [hotelId, keptIds]
+          )
+        } else {
+          await client.query('DELETE FROM special_events WHERE hotel_id = $1', [hotelId])
         }
       }
 

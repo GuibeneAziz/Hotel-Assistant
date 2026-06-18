@@ -123,6 +123,12 @@ export async function getAllHotelSettings() {
         s.spa = { available: facility.is_available, openTime: facility.open_time, closeTime: facility.close_time, treatments: facility.treatments || [] }
       } else if (facility.facility_type === 'pool') {
         s.pool = { openTime: facility.open_time, closeTime: facility.close_time, available: facility.is_available }
+      } else if (facility.facility_type === 'bar') {
+        if (!s.pool) {
+          s.pool = { openTime: '', closeTime: '', available: false }
+        }
+        s.pool.barOpenTime = facility.open_time
+        s.pool.barCloseTime = facility.close_time
       } else if (facility.facility_type === 'gym') {
         s.gym = { openTime: facility.open_time, closeTime: facility.close_time, available: facility.is_available }
       } else if (facility.facility_type === 'kids_club') {
