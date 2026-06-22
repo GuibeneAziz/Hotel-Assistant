@@ -2,7 +2,7 @@
 // Script to generate bcrypt password hash for admin password
 // Usage: node scripts/hash-password.js <password>
 
-const bcrypt = require('bcrypt')
+const bcrypt = require('bcryptjs')
 
 const SALT_ROUNDS = 12
 

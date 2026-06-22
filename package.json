@@ -4,10 +4,26 @@
   "description": "Tourist Assistant for Tunisia Hotels",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "node scripts/check-database.mjs && next dev -p 3001",
+    "dev:clean": "powershell -ExecutionPolicy Bypass -File scripts/dev-clean.ps1",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "next lint"
+    "lint": "next lint",
+    "docker:up": "docker compose up --build -d",
+    "docker:up:local": "docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app",
+    "docker:seed": "docker compose exec -e DATABASE_URL=postgresql://hotel:hotel_secret_change_me@postgres:5432/hotel_assistant -T app node scripts/seed-attractions.js",
+    "docker:seed-settings": "docker compose exec -e DATABASE_URL=postgresql://hotel:hotel_secret_change_me@postgres:5432/hotel_assistant -T app node scripts/seed-hotel-settings.js",
+    "docker:seed-all": "npm run docker:seed-settings && npm run docker:seed",
+    "docker:verify": "node scripts/verify-docker.mjs",
+    "fix:images": "node scripts/fix-attraction-images.js",
+    "db:check": "node scripts/check-database.mjs",
+    "db:use-neon": "node scripts/db-use-neon.mjs",
+    "db:use-docker": "node scripts/db-use-docker.mjs",
+    "db:sync-env": "node scripts/db-use-docker.mjs",
+    "db:seed": "node scripts/seed-hotel-settings.js && node scripts/seed-attractions.js",
+    "db:seed-all": "npm run db:seed"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

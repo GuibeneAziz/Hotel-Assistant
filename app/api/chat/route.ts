@@ -4,14 +4,26 @@ import { buildHotelKnowledge, buildPersonalizedHotelKnowledge, extractRelevantCo
 import { chatMessageSchema, validateAndSanitize } from '@/lib/validation'
 import type { ApiResponse, ChatResponse } from '@/types/api'
 import { 
-  detectQuestionCategory, 
-  trackQuestionCategory, 
-  trackPopularTopic,
+  trackQuestionTopics,
   getGuestProfile,
   createOrUpdateGuestProfile
 } from '@/lib/analytics'
+import { isActivityExplorationQuery } from '@/lib/question-classifier'
+import {
+  buildAttractionDetailResponse,
+  buildAttractionRecommendationResponse,
+  findListedAttractions,
+  isAnsweringStep1Preference,
+  isChoiceSelectionMessage,
+  isShortlistResponse,
+  resolveAttractionDetailTarget,
+  resolveExplorationCategories,
+  shouldSkipActivityStep1,
+} from '@/lib/activity-recommendations'
+import { buildAttractionImageTag } from '@/lib/attraction-images'
 import { checkRateLimit } from '@/lib/rate-limit-helper'
 import { getAllHotelSettings } from '@/lib/db'
+import { mergeHotelSettings } from '@/lib/hotel-default-settings'
 
 export async function POST(request: Request) {
   try {
@@ -40,62 +52,74 @@ export async function POST(request: Request) {
     }
 
     const { message, hotelData, weather, conversationHistory, sessionId } = validation.data!
+    const trackingHotelId =
+      typeof hotelData?.id === 'string' && hotelData.id.trim()
+        ? hotelData.id.trim()
+        : null
     console.log('✅ Validation passed, message length:', message.length)
 
-    // Load hotel settings from database
-    let hotelSettings: any = null
+    // Load hotel settings from PostgreSQL (single source of truth)
+    let hotelSettings: any
+    let resolvedHotelId = trackingHotelId || 'sindbad-hammamet'
     try {
       const allHotelSettings = await getAllHotelSettings()
-      const hotelId = hotelData?.id || Object.keys(allHotelSettings)[0]
-      hotelSettings = allHotelSettings[hotelId] || null
+      resolvedHotelId = hotelData?.id || Object.keys(allHotelSettings)[0] || resolvedHotelId
+      hotelSettings = mergeHotelSettings(allHotelSettings[resolvedHotelId] || null, resolvedHotelId)
+      if (allHotelSettings[resolvedHotelId]?.nearbyAttractions) {
+        hotelSettings.nearbyAttractions = allHotelSettings[resolvedHotelId].nearbyAttractions
+      }
     } catch (dbError: any) {
       console.error('Failed to load hotel settings from DB:', dbError.message)
-      // Continue without hotel settings - AI will have limited context
+      return NextResponse.json<ChatResponse>(
+        {
+          success: false,
+          error: 'Database unavailable',
+          response:
+            'I cannot reach the hotel database right now. Run `npm run db:check` on the server, fix DATABASE_URL in .env.local, then restart the app.',
+        },
+        { status: 503 }
+      )
     }
 
-    if (!hotelSettings) {
-      console.warn('⚠️ No hotel settings found, using minimal context')
-    }
+    const nearbyAttractions = hotelSettings?.nearbyAttractions || []
 
-    // Fetch guest profile (needed for personalised knowledge building).
-    // The interaction-count update and analytics tracking are fire-and-forget
-    // so they never delay the AI response.
-    let guestProfile = null
+    // Fetch guest profile (optional — powers personalization & demographics).
+    let guestProfile: Awaited<ReturnType<typeof getGuestProfile>> = null
     if (sessionId) {
       try {
         guestProfile = await getGuestProfile(sessionId)
-
         if (guestProfile) {
-          // Non-blocking: update interaction count + track analytics in background
           createOrUpdateGuestProfile({
             sessionId: guestProfile.session_id,
             hotelId: guestProfile.hotel_id,
             ageRange: guestProfile.age_range,
             nationality: guestProfile.nationality,
             travelPurpose: guestProfile.travel_purpose,
-            groupType: guestProfile.group_type
+            groupType: guestProfile.group_type,
           }).catch(() => {/* ignore */})
-
-          if (guestProfile.hotel_id) {
-            trackAnalytics(message, guestProfile.hotel_id, guestProfile.age_range)
-              .then((detectedLang) => {
-                // Persist the detected language back to the guest profile
-                createOrUpdateGuestProfile({
-                  sessionId: guestProfile.session_id,
-                  hotelId: guestProfile.hotel_id,
-                  ageRange: guestProfile.age_range,
-                  nationality: guestProfile.nationality,
-                  travelPurpose: guestProfile.travel_purpose,
-                  groupType: guestProfile.group_type,
-                  preferredLanguage: detectedLang,
-                }).catch(() => {/* ignore */})
-              })
-              .catch(() => {/* ignore */})
-          }
         }
-      } catch (analyticsError) {
+      } catch {
         guestProfile = null
       }
+    }
+
+    // Track question topics for every message when we know the hotel (profile not required).
+    const hotelIdForTracking = guestProfile?.hotel_id || trackingHotelId
+    if (hotelIdForTracking) {
+      trackQuestionTopics(hotelIdForTracking, message, conversationHistory || [])
+        .then((detectedLang) => {
+          if (!guestProfile?.session_id) return
+          createOrUpdateGuestProfile({
+            sessionId: guestProfile.session_id,
+            hotelId: guestProfile.hotel_id,
+            ageRange: guestProfile.age_range,
+            nationality: guestProfile.nationality,
+            travelPurpose: guestProfile.travel_purpose,
+            groupType: guestProfile.group_type,
+            preferredLanguage: detectedLang,
+          }).catch(() => {/* ignore */})
+        })
+        .catch((err) => console.warn('Topic tracking failed:', err))
     }
 
     // Build hotel knowledge base
@@ -129,7 +153,47 @@ export async function POST(request: Request) {
       : rawContextForModel
     console.log('🛡️ Context sent to model, length:', contextForModel.length)
 
-    const nearbyAttractions = hotelSettings?.nearbyAttractions || []
+    if (isAttractionDetailRequest(message, nearbyAttractions, conversationHistory || [])) {
+      const detailTarget = resolveAttractionDetailTarget(
+        message,
+        nearbyAttractions,
+        conversationHistory || []
+      )
+      if (detailTarget) {
+        const detailResponse = buildAttractionDetailResponse(detailTarget, weather)
+        const finalResponse = appendAttractionMedia(
+          detailResponse,
+          nearbyAttractions,
+          message,
+          conversationHistory || []
+        )
+        return NextResponse.json<ChatResponse>({ success: true, response: finalResponse })
+      }
+    }
+
+    const explorationCategories = resolveExplorationCategories(message, conversationHistory || [])
+    if (
+      explorationCategories.length > 0 &&
+      nearbyAttractions.length > 0 &&
+      !isAttractionDetailRequest(message, nearbyAttractions, conversationHistory || [])
+    ) {
+      const localRec = buildAttractionRecommendationResponse(
+        explorationCategories,
+        nearbyAttractions,
+        guestProfile,
+        weather
+      )
+      if (localRec) {
+        console.log('📍 Local category recommendation:', explorationCategories.join(', '))
+        const finalResponse = appendAttractionMedia(
+          localRec,
+          nearbyAttractions,
+          message,
+          conversationHistory || []
+        )
+        return NextResponse.json<ChatResponse>({ success: true, response: finalResponse })
+      }
+    }
 
     // Enforce Step 1 locally — smaller models (e.g. Ollama 7B) often skip the
     // preference question and jump straight to listing attractions.
@@ -214,19 +278,7 @@ export async function POST(request: Request) {
   }
 }
 
-// Analytics tracking helper — also returns detected language for profile update
-async function trackAnalytics(
-  message: string,
-  hotelId: string,
-  ageRange?: string
-): Promise<string> {
-  const { category, subcategory, topics, language } = detectQuestionCategory(message)
-  await trackQuestionCategory(hotelId, category, subcategory, ageRange)
-  for (const topic of topics) {
-    await trackPopularTopic(hotelId, topic)
-  }
-  return language
-}
+// Analytics tracking is handled by trackQuestionTopics in the POST handler.
 
 function getSignificantWords(value: string): string[] {
   return value
@@ -288,17 +340,6 @@ function queryMatchesAny(query: string, keywords: string[]): boolean {
   return keywords.some((keyword) => query.includes(keyword))
 }
 
-const ACTIVITY_EXPLORATION_KEYWORDS = [
-  'go out', 'clear my head', 'things to do', 'what to do', 'where can i',
-  'where should i', 'attraction', 'visit', 'explore', 'activities', 'nearby',
-  'something to do', 'place to go', 'sortir', 'visiter', 'activite', 'activites',
-  'que faire', 'ou aller', 'recommend', 'suggestion',
-]
-
-function isActivityExplorationQuery(query: string): boolean {
-  return queryMatchesAny(query, ACTIVITY_EXPLORATION_KEYWORDS)
-}
-
 function isStep1PreferenceQuestion(text: string): boolean {
   const lower = text.toLowerCase()
   return (
@@ -339,6 +380,8 @@ function shouldForceActivityStep1(
   conversationHistory: { role: string; content: string }[],
   attractions: any[]
 ): boolean {
+  if (shouldSkipActivityStep1(message, conversationHistory || [])) return false
+
   const query = normalizeQuery(message)
   if (!isActivityExplorationQuery(query)) return false
   if (isSpecificAttractionQuery(query, attractions)) return false
@@ -347,6 +390,48 @@ function shouldForceActivityStep1(
     (entry) => entry.role === 'assistant' && isStep1PreferenceQuestion(entry.content)
   )
   return !askedStep1
+}
+
+function isAttractionDetailRequest(
+  message: string,
+  attractions: any[],
+  conversationHistory: { role: string; content: string }[]
+): boolean {
+  const query = normalizeQuery(message)
+  if (
+    queryMatchesAny(query, [
+      'tell me more',
+      'more about',
+      'details about',
+      'information about',
+      'directions',
+      'how to get',
+      'how do i get',
+    ])
+  ) {
+    return true
+  }
+
+  if (isChoiceSelectionMessage(message)) {
+    const lastAssistant = [...conversationHistory]
+      .reverse()
+      .find((entry) => entry.role === 'assistant')?.content
+    if (lastAssistant && isShortlistResponse(lastAssistant, attractions)) {
+      return true
+    }
+  }
+
+  if (resolveVagueChoice(message, conversationHistory, attractions)) return true
+  if (resolveAttractionDetailTarget(message, attractions, conversationHistory)) return true
+
+  const attraction = findBestMentionedAttraction(message, attractions)
+  if (!attraction) return false
+
+  const shortlistPhrases = ['recommend', 'suggestion', 'what can i', 'things to do', 'good coffee', 'coffee', 'cafe']
+  if (shortlistPhrases.some((phrase) => query.includes(phrase))) return false
+  if (isAnsweringStep1Preference(conversationHistory)) return false
+
+  return true
 }
 
 function buildStep1ActivityResponse(guestProfile?: any): string {
@@ -510,7 +595,11 @@ function buildAttractionFallbackResponse(
 // Health check endpoint
 export async function GET() {
   try {
-    const hasApiKey = !!process.env.GROQ_API_KEY
+    const aiProvider = (process.env.AI_PROVIDER || 'groq').trim().toLowerCase()
+    const hasApiKey =
+      aiProvider === 'ollama'
+        ? !!(process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL)
+        : !!process.env.GROQ_API_KEY
     const hasRedis = !!process.env.REDIS_URL
     
     return NextResponse.json<ApiResponse>({
@@ -560,7 +649,7 @@ function resolveVagueChoice(
   const lastAssistant = [...conversationHistory]
     .reverse()
     .find((entry) => entry.role === 'assistant')?.content || ''
-  const shortlist = findMentionedAttractions(lastAssistant, attractions, 4)
+  const shortlist = findListedAttractions(lastAssistant, attractions)
   return shortlist[choiceIndex] || null
 }
 
@@ -604,8 +693,8 @@ function resolveFocusAttraction(
   return null
 }
 
-function buildImageTag(attraction: any): string {
-  return `[IMAGE:${attraction.attraction_name}|${attraction.image_url}]`
+function buildImageTag(attraction: any): string | null {
+  return buildAttractionImageTag(attraction)
 }
 
 function buildMapTag(attraction: any): string {
@@ -629,35 +718,49 @@ function appendAttractionMedia(
 ): string {
   if (response.includes('[MAP:')) return response
 
-  const focus = resolveFocusAttraction(userMessage, response, conversationHistory, attractions)
+  const userPick = resolveAttractionDetailTarget(userMessage, attractions, conversationHistory)
+  const listedInResponse = findListedAttractions(response, attractions)
+  const focus = userPick || (listedInResponse.length === 1 ? listedInResponse[0] : null)
+
   if (focus) {
     let out = response
-    if (focus.image_url && !response.includes(focus.image_url) && !response.includes('[IMAGE:')) {
-      out += '\n\n' + buildImageTag(focus)
+    const imageTag = buildImageTag(focus)
+    if (imageTag && !response.includes('[IMAGE:')) {
+      out += '\n\n' + imageTag
     }
     out += '\n' + buildMapTag(focus)
     return out
   }
 
-  const mentioned = findMentionedAttractions(response, attractions, 4)
-  if (mentioned.length === 0) return response
+  const shortlist =
+    listedInResponse.length >= 2
+      ? listedInResponse
+      : isShortlistResponse(response, attractions)
+        ? findListedAttractions(response, attractions)
+        : []
 
-  // Step-2 shortlist: several options listed, the guest hasn't chosen yet
-  if (mentioned.length >= 2) {
-    if (response.includes('[IMAGE:')) return response
-    const photos = mentioned
-      .filter((a: any) => a.image_url)
+  if (shortlist.length >= 2 && !response.includes('[IMAGE:')) {
+    const photos = shortlist
       .slice(0, 3)
-      .map(buildImageTag)
-    return photos.length > 0 ? response + '\n\n' + photos.join('\n') : response
+      .map((a: any) => buildImageTag(a))
+      .filter((tag): tag is string => Boolean(tag))
+    if (photos.length > 0) {
+      return response + '\n\n' + photos.join('\n')
+    }
   }
 
-  // Step-3 detail: exactly one attraction in focus → photo + directions
-  const attraction = mentioned[0]
-  let out = response
-  if (attraction.image_url && !response.includes('[IMAGE:')) out += '\n\n' + buildImageTag(attraction)
-  out += '\n' + buildMapTag(attraction)
-  return out
+  const legacyFocus = resolveFocusAttraction(userMessage, response, conversationHistory, attractions)
+  if (legacyFocus) {
+    let out = response
+    const imageTag = buildImageTag(legacyFocus)
+    if (imageTag && !response.includes('[IMAGE:')) {
+      out += '\n\n' + imageTag
+    }
+    out += '\n' + buildMapTag(legacyFocus)
+    return out
+  }
+
+  return response
 }
 
 // Append [IMAGE:url] tags for events mentioned in the AI response that have photos

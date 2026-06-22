@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   experimental: {
     // Tree-shake only the icons/components actually imported — cuts bundle size
     optimizePackageImports: ['lucide-react', 'framer-motion', 'recharts'],

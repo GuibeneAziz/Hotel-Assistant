@@ -89,7 +89,7 @@ export class RateLimiter {
 
   private cleanup() {
     const now = Date.now()
-    for (const [key, window] of this.store) {
+    for (const [key, window] of Array.from(this.store.entries())) {
       window.timestamps = window.timestamps.filter(t => t > now - window.windowMs)
       if (window.timestamps.length === 0) this.store.delete(key)
     }

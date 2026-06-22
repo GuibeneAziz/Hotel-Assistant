@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Settings, Save, MapPin, Eye, ChevronRight, Plus, Trash2, RefreshCw } from 'lucide-react'
 import AdminShell from '@/app/components/admin/AdminShell'
 import OperatingHoursPanel from '@/app/components/admin/OperatingHoursPanel'
+import { getAdminToken, isUnauthorizedResponse, redirectToAdminLogin } from '@/lib/admin-auth'
 
 interface RestaurantSchedule {
   breakfast: { start: string; end: string; available: boolean }
@@ -270,7 +271,12 @@ function AdminDashboardPage() {
   const persistHotelSettings = async (hotelId: string, hotelSettings: HotelSettings) => {
     setSaveStatus('saving')
     try {
-      const token = localStorage.getItem('adminToken')
+      const token = getAdminToken()
+      if (!token) {
+        redirectToAdminLogin('Please log in to save hotel settings.')
+        return false
+      }
+
       const response = await fetch('/api/hotel-settings', {
         method: 'POST',
         headers: {
@@ -279,6 +285,11 @@ function AdminDashboardPage() {
         },
         body: JSON.stringify({ hotelId, settings: hotelSettings })
       })
+
+      if (isUnauthorizedResponse(response)) {
+        redirectToAdminLogin('Your session has expired. Please log in again.')
+        return false
+      }
 
       const result = await response.json()
       if (!result.success) throw new Error(result.message || 'Failed to save settings')
@@ -995,7 +1006,7 @@ function AdminDashboardPage() {
 
                 {/* Group by category */}
                 {!attractionsLoading && (() => {
-                  const categories = [...new Set(attractions.map(a => a.category))].sort()
+                  const categories = Array.from(new Set(attractions.map(a => a.category))).sort()
                   const categoryEmoji: Record<string, string> = {
                     cultural: '🏛️', nature: '🌿', adventure: '🏄', entertainment: '🎭',
                     shopping: '🛍️', restaurant: '🍽️', cafe: '☕',

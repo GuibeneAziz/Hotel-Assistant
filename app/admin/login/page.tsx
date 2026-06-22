@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Lock, User, Eye, EyeOff, Shield } from 'lucide-react'
+import { readAdminLoginMessage } from '@/lib/admin-auth'
 
 export default function AdminLogin() {
   const router = useRouter()
@@ -12,6 +13,11 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    const message = readAdminLoginMessage()
+    if (message) setError(message)
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,7 +77,7 @@ export default function AdminLogin() {
             transition={{ delay: 0.35 }}
             className="text-sm text-luxury-muted"
           >
-            Sindbad Luxury — Hotel Management
+            Hotel Assistant Manager — Admin Portal
           </motion.p>
         </div>
 

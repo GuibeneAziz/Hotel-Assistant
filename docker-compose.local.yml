@@ -1,0 +1,16 @@
+# Optional override for local development — publish ports to the host.
+# Usage: copy to docker-compose.override.yml
+#   cp docker-compose.local.yml docker-compose.override.yml
+
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  app:
+    ports:
+      - "${APP_PORT:-3001}:3001"

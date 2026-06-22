@@ -11,6 +11,7 @@ import { useLanguage } from '@/lib/i18n'
 import LanguageSwitcher from '@/app/components/LanguageSwitcher'
 import { getTodayLocal, isUpcomingEvent, normalizeEventDate } from '@/lib/event-dates'
 import { fetchLiveWeather, type LiveWeather } from '@/lib/weather'
+import { mergeHotelSettings } from '@/lib/hotel-default-settings'
 
 interface Message {
   id: string
@@ -28,6 +29,17 @@ interface HotelPageState {
 }
 
 type HotelId = 'sindbad-hammamet' | 'villa-didon-carthage' | 'belvedere-fourati-tunis'
+
+function resolveRouteHotelId(params: { id?: string | string[] }): string {
+  const raw = params?.id
+  if (typeof raw === 'string' && raw.trim()) return raw.trim()
+  if (Array.isArray(raw) && raw[0]?.trim()) return raw[0].trim()
+  if (typeof window !== 'undefined') {
+    const match = window.location.pathname.match(/\/hotel\/([^/?#]+)/)
+    if (match?.[1]) return decodeURIComponent(match[1])
+  }
+  return ''
+}
 
 const hotelData: Record<HotelId, {
   name: string
@@ -64,50 +76,7 @@ const hotelData: Record<HotelId, {
 }
 
 function getDefaultHotelSettings(hotelId: string) {
-  const contacts: Record<string, { phone: string; email: string; address: string; emergencyPhone: string }> = {
-    'sindbad-hammamet': {
-      phone: '+216 72 280 122',
-      email: 'info@sindbad-hammamet.com',
-      address: 'Zone Touristique, Hammamet 8050, Tunisia',
-      emergencyPhone: '+216 72 280 100',
-    },
-    'villa-didon-carthage': {
-      phone: '+216 31 323 000',
-      email: 'contact@villadidoncarthage.com',
-      address: 'Rue Mendes France, Byrsa Hill, Carthage 2016, Tunisia',
-      emergencyPhone: '+216 31 323 100',
-    },
-    'belvedere-fourati-tunis': {
-      phone: '+216 71 783 133',
-      email: 'reservation@hotelbelvederetunis.com',
-      address: '10 Avenue des États-Unis, Belvédère, 1002 Tunis, Tunisia',
-      emergencyPhone: '+216 71 783 100',
-    },
-  }
-
-  return {
-    name: hotelData[hotelId as HotelId]?.name || 'Hotel',
-    contact: contacts[hotelId] || {
-      phone: '+216 70 000 000',
-      email: 'info@hotel.com',
-      address: 'Tunisia',
-      emergencyPhone: '+216 70 000 000',
-    },
-    restaurant: {
-      breakfast: { start: '07:00', end: '10:00', available: true },
-      lunch: { start: '12:00', end: '15:00', available: true },
-      dinner: { start: '19:00', end: '22:00', available: true },
-    },
-    spa: { available: false, openTime: '09:00', closeTime: '20:00', treatments: ['Traditional Hammam', 'Aromatherapy Massage'] },
-    pool: { openTime: '06:00', closeTime: '22:00', available: true },
-    gym: { openTime: '05:00', closeTime: '23:00', available: true },
-    kidsClub: { openTime: '09:00', closeTime: '17:00', available: true, ageRange: '4-12' },
-    specialEvents: [],
-    wifi: { available: true, password: 'Ask at reception', instructions: 'Connect to hotel WiFi network' },
-    parking: { available: true, price: 'Free', instructions: 'Parking available at hotel' },
-    checkIn: { time: '15:00', instructions: 'Check-in available at reception' },
-    checkOut: { time: '12:00', instructions: 'Check-out at reception' },
-  }
+  return mergeHotelSettings(null, hotelId)
 }
 
 
@@ -120,6 +89,37 @@ interface MapTag {
 interface ImageCard {
   url: string
   label?: string
+}
+
+function AttractionPhoto({ label, url }: { label?: string; url: string }) {
+  const [failed, setFailed] = useState(false)
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+      {label ? (
+        <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-200">
+          <MapPin className="h-3.5 w-3.5 text-luxury-gold" />
+          <span className="truncate">{label}</span>
+        </div>
+      ) : null}
+      <div className="relative h-52 bg-slate-900">
+        {failed ? (
+          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-400">
+            Photo unavailable
+          </div>
+        ) : (
+          <img
+            src={url}
+            alt={label ? `Photo of ${label}` : 'Photo'}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+          />
+        )}
+      </div>
+    </div>
+  )
 }
 
 function parseMessageContent(content: string): { text: string; imageCards: ImageCard[]; mapTags: MapTag[] } {
@@ -215,7 +215,7 @@ export default function HotelAssistant() {
   const searchParams = useSearchParams()
   const isAdminPreview = searchParams.get('preview') === 'admin'
   const { t, language } = useLanguage()
-  const hotelId = params.id as string
+  const hotelId = resolveRouteHotelId(params)
   const hotel = hotelData[hotelId as HotelId]
 
   const [messages, setMessages] = useState<Message[]>([])
@@ -291,7 +291,7 @@ export default function HotelAssistant() {
       .then((r) => (r.ok ? r.json() : null))
       .then((result) => {
         if (result?.success && result.data?.[hotelId]) {
-          setHotelSettings(result.data[hotelId])
+          setHotelSettings(mergeHotelSettings(result.data[hotelId], hotelId))
         } else {
           setHotelSettings(getDefaultHotelSettings(hotelId))
         }
@@ -549,14 +549,37 @@ export default function HotelAssistant() {
 
   const handleReaction = async (messageId: string, reaction: 'positive' | 'negative') => {
     if (reactions[messageId]) return // already reacted
+
+    const trackingHotelId = resolveRouteHotelId(params)
+    if (!trackingHotelId) {
+      console.warn('Reaction tracking skipped: missing hotel id')
+      return
+    }
+
     setReactions(prev => ({ ...prev, [messageId]: reaction }))
     try {
-      await fetch('/api/analytics/reaction', {
+      const res = await fetch('/api/analytics/reaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hotelId: hotel?.id, reaction }),
+        body: JSON.stringify({ hotelId: trackingHotelId, reaction }),
       })
-    } catch {/* fire-and-forget */}
+      if (!res.ok) {
+        const errText = await res.text()
+        console.warn('Reaction tracking failed:', errText)
+        setReactions(prev => {
+          const next = { ...prev }
+          delete next[messageId]
+          return next
+        })
+      }
+    } catch (error) {
+      console.warn('Reaction tracking error:', error)
+      setReactions(prev => {
+        const next = { ...prev }
+        delete next[messageId]
+        return next
+      })
+    }
   }
 
   const handleSendMessage = async () => {
@@ -871,24 +894,11 @@ export default function HotelAssistant() {
                       {parsed.imageCards.length > 0 ? (
                         <div className="mt-3 space-y-3">
                           {parsed.imageCards.map((image) => (
-                            <div key={`${image.label || 'photo'}-${image.url}`} className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                              {image.label ? (
-                                <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-200">
-                                  <MapPin className="h-3.5 w-3.5 text-luxury-gold" />
-                                  <span className="truncate">{image.label}</span>
-                                </div>
-                              ) : null}
-                              <div className="relative h-52">
-                              <Image
-                                src={image.url}
-                                alt={image.label ? `Photo of ${image.label}` : 'Photo'}
-                                fill
-                                className="object-cover"
-                                sizes="(max-width: 1024px) 100vw, 420px"
-                                unoptimized
-                              />
-                              </div>
-                            </div>
+                            <AttractionPhoto
+                              key={`${image.label || 'photo'}-${image.url}`}
+                              label={image.label}
+                              url={image.url}
+                            />
                           ))}
                         </div>
                       ) : null}

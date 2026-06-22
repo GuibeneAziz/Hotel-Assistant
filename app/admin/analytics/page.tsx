@@ -12,16 +12,22 @@ import {
 import {
   Users, MessageSquare, TrendingUp, Globe,
   RefreshCw, Activity, PieChart as PieChartIcon,
-  BarChart3, Sparkles, Zap, ThumbsUp, Download,
+  Sparkles, Zap, ThumbsUp,
   Languages, Clock, Hash, Building2,
 } from 'lucide-react'
 import AdminShell from '@/app/components/admin/AdminShell'
+import { getAdminToken } from '@/lib/admin-auth'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
-const GOLD_PALETTE = ['#D4AF37', '#E8C547', '#C9A227', '#B8962E', '#A07820', '#F0D060']
-const COOL_PALETTE = ['#10B981', '#34D399', '#059669', '#6EE7B7', '#065F46', '#A7F3D0']
-const MIX_PALETTE  = ['#D4AF37', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#14B8A6', '#F97316', '#3B82F6']
+const CHART_PALETTE = [
+  '#D4AF37', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#14B8A6',
+  '#3B82F6', '#F97316', '#06B6D4', '#EF4444', '#84CC16', '#A855F7',
+]
+
+function chartColor(index: number): string {
+  return CHART_PALETTE[index % CHART_PALETTE.length]
+}
 
 // ─── Animated counter ────────────────────────────────────────────────────────
 function AnimatedNumber({ target }: { target: number | string }) {
@@ -86,6 +92,8 @@ function ProgressBar({ name, value, max, color, delay, suffix = '' }: {
   )
 }
 
+const CHART_HEIGHT = 260
+
 // ─── Chart card ───────────────────────────────────────────────────────────────
 function ChartCard({ children, delay = 0, className = '', title, icon: Icon, color = '#D4AF37' }: {
   children: React.ReactNode; delay?: number; className?: string
@@ -97,12 +105,12 @@ function ChartCard({ children, delay = 0, className = '', title, icon: Icon, col
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.5, ease: 'easeOut' }}
       whileHover={{ y: -3, transition: { duration: 0.2 } }}
-      className={`luxury-card relative overflow-hidden ${className}`}
+      className={`luxury-card relative flex h-full flex-col overflow-hidden ${className}`}
     >
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-      <div className="p-6">
+      <div className="flex flex-1 flex-col p-6">
         {title && (
-          <div className="flex items-center gap-3 mb-5">
+          <div className="mb-5 flex items-center gap-3">
             {Icon && (
               <div className="flex h-9 w-9 items-center justify-center rounded-xl"
                 style={{ background: `${color}22`, border: `1px solid ${color}44` }}>
@@ -112,7 +120,7 @@ function ChartCard({ children, delay = 0, className = '', title, icon: Icon, col
             <h3 className="text-base font-semibold text-white">{title}</h3>
           </div>
         )}
-        {children}
+        <div className="flex flex-1 flex-col">{children}</div>
       </div>
     </motion.div>
   )
@@ -128,18 +136,6 @@ function InsightBadge({ label, value, color }: { label: string; value: string | 
   )
 }
 
-// ─── CSV Export ───────────────────────────────────────────────────────────────
-function exportCSV(rows: any[], filename: string) {
-  if (!rows?.length) return
-  const headers = Object.keys(rows[0]).join(',')
-  const body = rows.map(r => Object.values(r).join(',')).join('\n')
-  const blob = new Blob([headers + '\n' + body], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = filename; a.click()
-  URL.revokeObjectURL(url)
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
   const router = useRouter()
@@ -148,8 +144,7 @@ export default function AnalyticsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
-    const token = localStorage.getItem('adminToken')
-    if (!token) router.push('/admin/login')
+    if (!getAdminToken()) router.push('/admin/login')
   }, [router])
 
   const buildUrl = useCallback((ep: string) => {
@@ -204,8 +199,6 @@ export default function AnalyticsPage() {
   const rx = reactionData?.data ?? {}
 
   const natMax = dm.topNationalities?.reduce((m: number, n: any) => Math.max(m, n.value), 1) ?? 1
-  const topicMax = qu.popularTopics?.reduce((m: number, t: any) => Math.max(m, t.value), 1) ?? 1
-  const subMax = qu.topSubcategories?.reduce((m: number, s: any) => Math.max(m, s.value), 1) ?? 1
 
   // Peak hours: find the busiest 3-hour window
   const peakWindow = (() => {
@@ -222,26 +215,15 @@ export default function AnalyticsPage() {
   const satisfactionScore = rx.score !== null && rx.score !== undefined ? `${rx.score}%` : '—'
 
   const refreshAction = (
-    <div className="flex items-center gap-2">
-      <motion.button
-        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-        onClick={() => exportCSV(dm.topNationalities ?? [], 'nationalities.csv')}
-        className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-gray-300 hover:border-luxury-gold/40 hover:text-luxury-gold transition-colors"
-        title="Export nationalities to CSV"
-      >
-        <Download className="h-4 w-4" />
-        Export
-      </motion.button>
-      <motion.button
-        whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-        onClick={handleRefresh}
-        disabled={isRefreshing}
-        className="btn-luxury-primary flex items-center gap-2 !min-h-0 !py-2 disabled:opacity-50"
-      >
-        <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-        Refresh
-      </motion.button>
-    </div>
+    <motion.button
+      whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+      onClick={handleRefresh}
+      disabled={isRefreshing}
+      className="btn-luxury-primary flex items-center gap-2 !min-h-0 !py-2 disabled:opacity-50"
+    >
+      <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+      Refresh
+    </motion.button>
   )
 
   return (
@@ -361,20 +343,12 @@ export default function AnalyticsPage() {
         )}
 
         {/* ── Row 1: Age + Language ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
 
           {demographicsData?.success && (
             <ChartCard title="Age Distribution" icon={PieChartIcon} color="#D4AF37" delay={0.15}>
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
-                  <defs>
-                    {GOLD_PALETTE.map((c, i) => (
-                      <radialGradient key={i} id={`ageGrad${i}`} cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor={c} stopOpacity={1} />
-                        <stop offset="100%" stopColor={c} stopOpacity={0.65} />
-                      </radialGradient>
-                    ))}
-                  </defs>
                   <Pie data={dm.ageDistribution} cx="50%" cy="50%"
                     innerRadius={55} outerRadius={95} paddingAngle={4} cornerRadius={5}
                     dataKey="value" label={({ name, value }) => `${name}: ${value}`}
@@ -382,7 +356,7 @@ export default function AnalyticsPage() {
                     isAnimationActive animationBegin={200} animationDuration={800}
                   >
                     {dm.ageDistribution?.map((_: any, i: number) => (
-                      <Cell key={i} fill={`url(#ageGrad${i % GOLD_PALETTE.length})`} stroke="none" />
+                      <Cell key={i} fill={chartColor(i)} stroke="rgba(0,0,0,0.25)" strokeWidth={1} />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -395,14 +369,6 @@ export default function AnalyticsPage() {
             <ChartCard title="Language Distribution" icon={Languages} color="#10B981" delay={0.2}>
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
-                  <defs>
-                    {COOL_PALETTE.map((c, i) => (
-                      <radialGradient key={i} id={`langGrad${i}`} cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor={c} stopOpacity={1} />
-                        <stop offset="100%" stopColor={c} stopOpacity={0.65} />
-                      </radialGradient>
-                    ))}
-                  </defs>
                   <Pie data={dm.languageDistribution ?? []} cx="50%" cy="50%"
                     innerRadius={55} outerRadius={95} paddingAngle={4} cornerRadius={5}
                     dataKey="value" label={({ name, value }) => `${name}: ${value}`}
@@ -410,7 +376,7 @@ export default function AnalyticsPage() {
                     isAnimationActive animationBegin={250} animationDuration={800}
                   >
                     {(dm.languageDistribution ?? []).map((_: any, i: number) => (
-                      <Cell key={i} fill={`url(#langGrad${i % COOL_PALETTE.length})`} stroke="none" />
+                      <Cell key={i} fill={chartColor(i)} stroke="rgba(0,0,0,0.25)" strokeWidth={1} />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -426,14 +392,14 @@ export default function AnalyticsPage() {
         </div>
 
         {/* ── Row 2: Top Nationalities + Travel Purposes ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
 
           {demographicsData?.success && (
             <ChartCard title="Top Nationalities" icon={Globe} color="#E8C547" delay={0.2}>
               <div className="mt-1">
                 {dm.topNationalities?.slice(0, 8).map((nat: any, i: number) => (
                   <ProgressBar key={nat.name} name={nat.name} value={nat.value} max={natMax}
-                    color={GOLD_PALETTE[i % GOLD_PALETTE.length]} delay={0.25 + i * 0.05} />
+                    color={chartColor(i)} delay={0.25 + i * 0.05} />
                 ))}
                 {!dm.topNationalities?.length && (
                   <p className="text-sm text-gray-500 text-center py-8">No data yet</p>
@@ -446,14 +412,6 @@ export default function AnalyticsPage() {
             <ChartCard title="Travel Purposes" icon={Sparkles} color="#F59E0B" delay={0.25}>
               <ResponsiveContainer width="100%" height={260}>
                 <PieChart>
-                  <defs>
-                    {MIX_PALETTE.map((c, i) => (
-                      <radialGradient key={i} id={`travelGrad${i}`} cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor={c} stopOpacity={1} />
-                        <stop offset="100%" stopColor={c} stopOpacity={0.65} />
-                      </radialGradient>
-                    ))}
-                  </defs>
                   <Pie data={dm.travelPurposes ?? []} cx="50%" cy="50%"
                     innerRadius={55} outerRadius={95} paddingAngle={4} cornerRadius={5}
                     dataKey="value" label={({ name, value }) => `${name}: ${value}`}
@@ -461,7 +419,7 @@ export default function AnalyticsPage() {
                     isAnimationActive animationBegin={300} animationDuration={800}
                   >
                     {(dm.travelPurposes ?? []).map((_: any, i: number) => (
-                      <Cell key={i} fill={`url(#travelGrad${i % MIX_PALETTE.length})`} stroke="none" />
+                      <Cell key={i} fill={chartColor(i)} stroke="rgba(0,0,0,0.25)" strokeWidth={1} />
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
@@ -471,32 +429,11 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* ── Row 3: Question Categories + Questions Over Time ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ── Row 3: Questions Over Time + Most Discussed Topics ── */}
+        <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
 
           {questionsData?.success && (
-            <ChartCard title="Question Categories" icon={BarChart3} color="#10B981" delay={0.25}>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={qu.questionCategories ?? []} margin={{ left: -10 }}>
-                  <defs>
-                    <linearGradient id="catBarGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10B981" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#059669" stopOpacity={0.6} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,.04)' }} />
-                  <Bar dataKey="value" fill="url(#catBarGrad)" radius={[5, 5, 0, 0]} barSize={26}
-                    isAnimationActive animationDuration={800} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          )}
-
-          {questionsData?.success && (
-            <ChartCard title="Questions Over Time" icon={Activity} color="#8B5CF6" delay={0.3}>
+            <ChartCard title="Questions Over Time" icon={Activity} color="#8B5CF6" delay={0.25}>
               <ResponsiveContainer width="100%" height={260}>
                 <AreaChart data={qu.questionsOverTime ?? []} margin={{ left: -10 }}>
                   <defs>
@@ -519,22 +456,55 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
             </ChartCard>
           )}
+
+          {questionsData?.success && (
+            <ChartCard title="Most Discussed Topics" icon={Hash} color="#F59E0B" delay={0.3}>
+              {(qu.popularTopics ?? []).length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={qu.popularTopics ?? []} layout="vertical" margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={150}
+                      tick={{ fontSize: 11, fill: '#9CA3AF' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,.04)' }} />
+                    <Bar dataKey="value" name="Questions" radius={[0, 5, 5, 0]} barSize={18}
+                      isAnimationActive animationDuration={800}>
+                    {(qu.popularTopics ?? []).map((topic: any, i: number) => (
+                      <Cell key={topic.key ?? i} fill={chartColor(i)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-12">
+                  Topics are classified from guest chat messages (activities, dining, facilities, etc.)
+                </p>
+              )}
+            </ChartCard>
+          )}
         </div>
 
-        {/* ── Row 4: Peak Hours + Popular Topics ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ── Row 4: Peak Hours + Group Types ── */}
+        <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
 
           {questionsData?.success && (
             <ChartCard title="Peak Activity Hours" icon={Clock} color="#D4AF37" delay={0.32}>
-              <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+              <div className="mb-3 flex min-h-7 items-center justify-between text-xs text-gray-500">
                 <span>Guest activity by hour of day (server time)</span>
                 {peakWindow && (
-                  <span className="rounded-full bg-luxury-gold/10 px-2.5 py-1 text-luxury-gold font-medium border border-luxury-gold/25">
+                  <span className="rounded-full border border-luxury-gold/25 bg-luxury-gold/10 px-2.5 py-1 font-medium text-luxury-gold">
                     Peak: {peakWindow}
                   </span>
                 )}
               </div>
-              <ResponsiveContainer width="100%" height={220}>
+              <div className="min-h-[260px] flex-1">
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
                 <BarChart data={qu.peakHours ?? []} margin={{ left: -10 }}>
                   <defs>
                     <linearGradient id="peakBarGrad" x1="0" y1="0" x2="0" y2="1">
@@ -553,104 +523,70 @@ export default function AnalyticsPage() {
                     isAnimationActive animationDuration={900} />
                 </BarChart>
               </ResponsiveContainer>
+              </div>
               {!qu.peakHours?.some((h: any) => h.interactions > 0) && (
-                <p className="text-center text-sm text-gray-500 -mt-4">
+                <p className="-mt-4 text-center text-sm text-gray-500">
                   Real data collected from guest session timestamps
                 </p>
               )}
             </ChartCard>
           )}
 
-          {questionsData?.success && (
-            <ChartCard title="Most Discussed Topics" icon={Hash} color="#F59E0B" delay={0.35}>
-              <div className="mt-1 max-h-[260px] overflow-y-auto pr-1">
-                {(qu.popularTopics ?? []).slice(0, 10).map((topic: any, i: number) => (
-                  <ProgressBar key={topic.name} name={topic.name} value={topic.value} max={topicMax}
-                    color={MIX_PALETTE[i % MIX_PALETTE.length]} delay={0.35 + i * 0.04} />
-                ))}
-                {!qu.popularTopics?.length && (
-                  <p className="text-sm text-gray-500 text-center py-8">Topics collected from AI chats</p>
-                )}
-              </div>
-            </ChartCard>
-          )}
-        </div>
-
-        {/* ── Row 5: Group Types + Top Subcategories ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
           {demographicsData?.success && (
             <ChartCard title="Group Types" icon={Users} color="#EC4899" delay={0.38}>
-              <ResponsiveContainer width="100%" height={240}>
+              <div className="mb-3 flex min-h-7 items-center text-xs text-gray-500">
+                <span>Guests by travel party composition</span>
+              </div>
+              <div className="min-h-[260px] flex-1">
+              <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
                 <BarChart data={dm.groupTypes ?? []} margin={{ left: -10 }}>
-                  <defs>
-                    <linearGradient id="groupBarGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#EC4899" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#DB2777" stopOpacity={0.6} />
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,.05)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#6B7280' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,.04)' }} />
-                  <Bar dataKey="value" fill="url(#groupBarGrad)" radius={[5, 5, 0, 0]} barSize={42}
-                    isAnimationActive animationDuration={800} />
+                  <Bar dataKey="value" radius={[5, 5, 0, 0]} barSize={42}
+                    isAnimationActive animationDuration={800}>
+                    {(dm.groupTypes ?? []).map((_: any, i: number) => (
+                      <Cell key={i} fill={chartColor(i)} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </ChartCard>
-          )}
-
-          {questionsData?.success && (
-            <ChartCard title="Top Question Subcategories" icon={Zap} color="#14B8A6" delay={0.4}>
-              <div className="mt-1 max-h-[260px] overflow-y-auto pr-1">
-                {(qu.topSubcategories ?? []).slice(0, 10).map((sub: any, i: number) => (
-                  <ProgressBar key={sub.name}
-                    name={sub.name.replace(/_/g, ' ')}
-                    value={sub.value} max={subMax}
-                    color={COOL_PALETTE[i % COOL_PALETTE.length]}
-                    delay={0.4 + i * 0.04}
-                  />
-                ))}
-                {!qu.topSubcategories?.length && (
-                  <p className="text-sm text-gray-500 text-center py-8">No subcategory data yet</p>
-                )}
               </div>
             </ChartCard>
           )}
         </div>
 
         {/* ── Satisfaction row ── */}
-        {reactionData?.success && (
-          <ChartCard title="Guest Satisfaction — AI Concierge Ratings" icon={ThumbsUp} color="#8B5CF6" delay={0.42}>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <InsightBadge label="Positive ratings" value={rx.positive ?? 0} color="#10B981" />
-              <InsightBadge label="Negative ratings" value={rx.negative ?? 0} color="#EF4444" />
-              <InsightBadge label="Total rated" value={rx.total ?? 0} color="#D4AF37" />
-              <InsightBadge label="Satisfaction score" value={satisfactionScore} color="#8B5CF6" />
-            </div>
-            {rx.total > 0 && (
-              <div className="mt-4">
-                <div className="mb-1 flex justify-between text-xs text-gray-500">
-                  <span>Positive</span>
-                  <span>{satisfactionScore}</span>
-                </div>
-                <div className="h-3 overflow-hidden rounded-full bg-white/5">
-                  <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${rx.score ?? 0}%` }}
-                    transition={{ duration: 1, ease: 'easeOut', delay: 0.5 }}
-                  />
-                </div>
+        <ChartCard title="Guest Satisfaction — AI Concierge Ratings" icon={ThumbsUp} color="#8B5CF6" delay={0.42}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <InsightBadge label="Positive ratings" value={rx.positive ?? 0} color="#10B981" />
+            <InsightBadge label="Negative ratings" value={rx.negative ?? 0} color="#EF4444" />
+            <InsightBadge label="Total rated" value={rx.total ?? 0} color="#D4AF37" />
+            <InsightBadge label="Satisfaction score" value={satisfactionScore} color="#8B5CF6" />
+          </div>
+          {rx.total > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 flex justify-between text-xs text-gray-500">
+                <span>Positive</span>
+                <span>{satisfactionScore}</span>
               </div>
-            )}
-            {!rx.total && (
-              <p className="mt-3 text-sm text-gray-500">
-                Guests can rate AI responses with 👍 / 👎 in the chat interface.
-              </p>
-            )}
-          </ChartCard>
-        )}
+              <div className="h-3 overflow-hidden rounded-full bg-white/5">
+                <motion.div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${rx.score ?? 0}%` }}
+                  transition={{ duration: 1, ease: 'easeOut', delay: 0.5 }}
+                />
+              </div>
+            </div>
+          )}
+          {!rx.total && (
+            <p className="mt-3 text-sm text-gray-500">
+              Guests can rate AI responses with 👍 / 👎 in the chat interface.
+            </p>
+          )}
+        </ChartCard>
 
         <div className="h-8" />
       </div>

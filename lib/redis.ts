@@ -16,11 +16,13 @@ let errorLogged = false          // only log the first failure
 function buildClient(): Redis {
   const url = process.env.REDIS_URL
 
+  const useTls = url?.startsWith('rediss://')
+
   const client = url
     ? new Redis(url, {
         maxRetriesPerRequest: 1,
         enableReadyCheck: false,
-        tls: { rejectUnauthorized: false },  // required for Upstash TLS
+        ...(useTls ? { tls: { rejectUnauthorized: false } } : {}),
         retryStrategy: (times) => {
           if (times >= 2) {
             redisAvailable = false

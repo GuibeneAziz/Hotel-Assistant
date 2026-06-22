@@ -27,7 +27,7 @@ const NATIONALITY_MAP: Record<string, string> = {
   turkish: 'Turkish', turc: 'Turkish', turksh: 'Turkish', tukish: 'Turkish',
   turksih: 'Turkish', turkey: 'Turkish',
   // Tunisian
-  tunisian: 'Tunisian', tunisien: 'Tunisian', tunisain: 'Tunisian', tunisien: 'Tunisian',
+  tunisian: 'Tunisian', tunisien: 'Tunisian', tunisain: 'Tunisian',
   tunisia: 'Tunisian', tunsian: 'Tunisian',
   // Russian
   russian: 'Russian', russe: 'Russian', rusian: 'Russian', russain: 'Russian',

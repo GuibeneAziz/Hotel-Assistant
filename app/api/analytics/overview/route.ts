@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import pool from '@/lib/db'
+import { aggregateTopicCounts } from '@/lib/question-classifier'
 import { checkRateLimit } from '@/lib/rate-limit-helper'
+
+const EXCLUDED_TOPICS = ['ai_response_satisfaction', 'general', 'general_inquiry']
 
 export async function GET(request: Request) {
   try {
@@ -86,13 +89,29 @@ export async function GET(request: Request) {
         mostActiveHotel = hotelComparison[0]?.hotelId || null
       }
 
-      // Top question category
-      const categoryQuery = hotelId
-        ? 'SELECT category, SUM(question_count) as total FROM question_categories WHERE hotel_id = $1 AND date >= $2 GROUP BY category ORDER BY total DESC LIMIT 1'
-        : 'SELECT category, SUM(question_count) as total FROM question_categories WHERE date >= $1 GROUP BY category ORDER BY total DESC LIMIT 1'
-      
-      const categoryResult = await client.query(categoryQuery, guestParams)
-      const topCategory = categoryResult.rows[0]?.category || 'facilities'
+      // Top discussed topic (canonical — merges dining/restaurant/breakfast etc.)
+      const topTopicRowsQuery = hotelId
+        ? `SELECT topic, SUM(mention_count) AS total
+           FROM popular_topics
+           WHERE hotel_id = $1
+             AND date >= $2
+             AND topic <> ALL($3::text[])
+           GROUP BY topic`
+        : `SELECT topic, SUM(mention_count) AS total
+           FROM popular_topics
+           WHERE date >= $1
+             AND topic <> ALL($2::text[])
+           GROUP BY topic`
+
+      const topTopicParams = hotelId
+        ? [hotelId, startDate, EXCLUDED_TOPICS]
+        : [startDate, EXCLUDED_TOPICS]
+      const topTopicRows = await client.query(topTopicRowsQuery, topTopicParams)
+      const aggregated = aggregateTopicCounts(
+        topTopicRows.rows.map((row) => ({ topic: row.topic, total: row.total })),
+        EXCLUDED_TOPICS
+      )
+      const topCategory = aggregated[0]?.name ?? '—'
 
       // Average session interactions
       const avgQuery = hotelId

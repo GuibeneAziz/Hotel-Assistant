@@ -4,7 +4,7 @@ import type { ApiResponse } from '@/types/api'
 import { getAllHotelSettings, invalidateHotelSettingsCache } from '@/lib/db'
 import pool from '@/lib/db'
 import { verify } from 'jsonwebtoken'
-import { getEnv } from '@/lib/env'
+import { getAuthEnv } from '@/lib/env'
 import { normalizeEventDate } from '@/lib/event-dates'
 
 const CACHE_KEY = 'hotel:settings:all'
@@ -13,7 +13,7 @@ const CACHE_TTL = 3600 // 1 hour
 // Verify JWT from Authorization header
 function verifyAdminToken(request: NextRequest): boolean {
   try {
-    const env = getEnv()
+    const env = getAuthEnv()
     const authHeader = request.headers.get('authorization')
     if (!authHeader?.startsWith('Bearer ')) return false
     const token = authHeader.substring(7)
@@ -80,33 +80,56 @@ export async function POST(request: NextRequest) {
     try {
       await client.query('BEGIN')
 
-      // Update restaurant facilities
+      // Upsert restaurant facilities
       if (settings.restaurant) {
         for (const [mealType, mealData] of Object.entries(settings.restaurant)) {
           const meal = mealData as { available: boolean; start: string; end: string }
-          // Skip if times are empty (no row in DB for this meal)
           if (!t(meal.start) && !t(meal.end)) continue
           await client.query(`
-            UPDATE facilities
-            SET is_available = $1, open_time = $2, close_time = $3
-            WHERE hotel_id = $4 AND facility_type = 'restaurant' AND facility_name = $5
+            INSERT INTO facilities (hotel_id, facility_type, facility_name, is_available, open_time, close_time)
+            VALUES ($4, 'restaurant', $5, $1, $2, $3)
+            ON CONFLICT (hotel_id, facility_type, facility_name)
+            DO UPDATE SET
+              is_available = EXCLUDED.is_available,
+              open_time = EXCLUDED.open_time,
+              close_time = EXCLUDED.close_time,
+              updated_at = NOW()
           `, [meal.available, t(meal.start), t(meal.end), hotelId, mealType])
         }
       }
 
-      // Update spa
+      // Upsert spa
       if (settings.spa && (t(settings.spa.openTime) || t(settings.spa.closeTime))) {
         await client.query(`
-          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
-          WHERE hotel_id = $4 AND facility_type = 'spa'
-        `, [settings.spa.available, t(settings.spa.openTime), t(settings.spa.closeTime), hotelId])
+          INSERT INTO facilities (hotel_id, facility_type, facility_name, is_available, open_time, close_time, treatments)
+          VALUES ($4, 'spa', 'main', $1, $2, $3, $5)
+          ON CONFLICT (hotel_id, facility_type, facility_name)
+          DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            open_time = EXCLUDED.open_time,
+            close_time = EXCLUDED.close_time,
+            treatments = EXCLUDED.treatments,
+            updated_at = NOW()
+        `, [
+          settings.spa.available,
+          t(settings.spa.openTime),
+          t(settings.spa.closeTime),
+          hotelId,
+          settings.spa.treatments || null,
+        ])
       }
 
-      // Update pool
+      // Upsert pool
       if (settings.pool && (t(settings.pool.openTime) || t(settings.pool.closeTime))) {
         await client.query(`
-          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
-          WHERE hotel_id = $4 AND facility_type = 'pool'
+          INSERT INTO facilities (hotel_id, facility_type, facility_name, is_available, open_time, close_time)
+          VALUES ($4, 'pool', 'main', $1, $2, $3)
+          ON CONFLICT (hotel_id, facility_type, facility_name)
+          DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            open_time = EXCLUDED.open_time,
+            close_time = EXCLUDED.close_time,
+            updated_at = NOW()
         `, [settings.pool.available, t(settings.pool.openTime), t(settings.pool.closeTime), hotelId])
       }
 
@@ -214,20 +237,39 @@ export async function POST(request: NextRequest) {
         ])
       }
 
-      // Update gym
+      // Upsert gym
       if (settings.gym && (t(settings.gym.openTime) || t(settings.gym.closeTime))) {
         await client.query(`
-          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
-          WHERE hotel_id = $4 AND facility_type = 'gym'
+          INSERT INTO facilities (hotel_id, facility_type, facility_name, is_available, open_time, close_time)
+          VALUES ($4, 'gym', 'main', $1, $2, $3)
+          ON CONFLICT (hotel_id, facility_type, facility_name)
+          DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            open_time = EXCLUDED.open_time,
+            close_time = EXCLUDED.close_time,
+            updated_at = NOW()
         `, [settings.gym.available, t(settings.gym.openTime), t(settings.gym.closeTime), hotelId])
       }
 
-      // Update kids club (only if a row actually exists in DB)
+      // Upsert kids club
       if (settings.kidsClub && (t(settings.kidsClub.openTime) || t(settings.kidsClub.closeTime))) {
         await client.query(`
-          UPDATE facilities SET is_available = $1, open_time = $2, close_time = $3
-          WHERE hotel_id = $4 AND facility_type = 'kids_club'
-        `, [settings.kidsClub.available, t(settings.kidsClub.openTime), t(settings.kidsClub.closeTime), hotelId])
+          INSERT INTO facilities (hotel_id, facility_type, facility_name, is_available, open_time, close_time, age_range)
+          VALUES ($4, 'kids_club', 'main', $1, $2, $3, $5)
+          ON CONFLICT (hotel_id, facility_type, facility_name)
+          DO UPDATE SET
+            is_available = EXCLUDED.is_available,
+            open_time = EXCLUDED.open_time,
+            close_time = EXCLUDED.close_time,
+            age_range = EXCLUDED.age_range,
+            updated_at = NOW()
+        `, [
+          settings.kidsClub.available,
+          t(settings.kidsClub.openTime),
+          t(settings.kidsClub.closeTime),
+          hotelId,
+          settings.kidsClub.ageRange || null,
+        ])
       }
 
       // Sync special events: update existing rows by id, insert new ones, remove deleted

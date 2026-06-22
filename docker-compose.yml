@@ -1,0 +1,140 @@
+# Production-oriented stack for VPS behind an existing Traefik reverse proxy.
+#
+# Usage:
+#   cp .env.docker.example .env
+#   docker compose up --build -d
+#
+# Local port publishing: copy docker-compose.local.yml → docker-compose.override.yml
+
+name: hotel-assistant
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hotel-assistant-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hotel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotel_secret_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-hotel_assistant}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./docker/postgres/02-seed-settings.sql:/docker-entrypoint-initdb.d/02-seed-settings.sql:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hotel} -d ${POSTGRES_DB:-hotel_assistant}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: hotel-assistant-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - internal
+
+  seed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.seed
+    container_name: hotel-assistant-seed
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hotel}:${POSTGRES_PASSWORD:-hotel_secret_change_me}@postgres:5432/${POSTGRES_DB:-hotel_assistant}
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://chatbot.survey-flow.com}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://apichatbot.survey-flow.com}
+    container_name: hotel-assistant-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUNNING_IN_DOCKER: "true"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hotel}:${POSTGRES_PASSWORD:-hotel_secret_change_me}@postgres:5432/${POSTGRES_DB:-hotel_assistant}
+      REDIS_URL: redis://redis:6379
+      DATABASE_SSL: "false"
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+      NODE_ENV: production
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://chatbot.survey-flow.com}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://apichatbot.survey-flow.com}
+    volumes:
+      - uploads_data:/app/public/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      seed:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - traefik
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/chat || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - "traefik.http.routers.hotel-chatbot.rule=Host(`${TRAEFIK_FRONT_HOST:-chatbot.survey-flow.com}`)"
+      - traefik.http.routers.hotel-chatbot.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.hotel-chatbot.tls=true
+      - traefik.http.routers.hotel-chatbot.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      - traefik.http.routers.hotel-chatbot.service=hotel-app
+      - "traefik.http.routers.hotel-api.rule=Host(`${TRAEFIK_API_HOST:-apichatbot.survey-flow.com}`)"
+      - traefik.http.routers.hotel-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.hotel-api.tls=true
+      - traefik.http.routers.hotel-api.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}
+      - traefik.http.routers.hotel-api.service=hotel-app
+      - traefik.http.services.hotel-app.loadbalancer.server.port=3001
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hotel-assistant-ollama
+    profiles: ["ai-local"]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - internal
+
+networks:
+  internal:
+    name: hotel-assistant-internal
+    driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+  uploads_data:

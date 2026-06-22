@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         },
         env.JWT_SECRET,
         { 
-          expiresIn: '24h',
+          expiresIn: '7d',
           issuer: 'tunisia-hotel-assistant',
           audience: 'tunisia-hotel-api'
         }

@@ -1,135 +1,116 @@
 import { NextResponse } from 'next/server'
 import pool from '@/lib/db'
+import { aggregateTopicCounts } from '@/lib/question-classifier'
 import { checkRateLimit } from '@/lib/rate-limit-helper'
+
+const EXCLUDED_TOPICS = ['ai_response_satisfaction', 'general', 'general_inquiry']
+
+function timeRangeToInterval(timeRange: string): string {
+  if (timeRange === '1d') return '1 day'
+  if (timeRange === '30d') return '30 days'
+  return '7 days'
+}
 
 export async function GET(request: Request) {
   try {
-    // Rate limiting
     const rateLimitResponse = await checkRateLimit(request, 'api')
-    if (rateLimitResponse) {
-      return rateLimitResponse
-    }
+    if (rateLimitResponse) return rateLimitResponse
 
     const { searchParams } = new URL(request.url)
     const hotelId = searchParams.get('hotelId')
     const timeRange = searchParams.get('timeRange') || '7d'
-
-    // Calculate date range
-    const now = new Date()
-    let startDate = new Date()
-    
-    switch (timeRange) {
-      case '1d':
-        startDate.setDate(now.getDate() - 1)
-        break
-      case '7d':
-        startDate.setDate(now.getDate() - 7)
-        break
-      case '30d':
-        startDate.setDate(now.getDate() - 30)
-        break
-      default:
-        startDate.setDate(now.getDate() - 7)
-    }
+    const interval = timeRangeToInterval(timeRange)
 
     const client = await pool.connect()
-    
+
     try {
-      const baseWhere = hotelId 
-        ? 'WHERE hotel_id = $1 AND date >= $2'
-        : 'WHERE date >= $1'
-      const params = hotelId ? [hotelId, startDate] : [startDate]
+      const peakHoursParams = hotelId ? [hotelId, interval] : [interval]
+      const topicParams = hotelId ? [hotelId, interval] : [interval]
 
-      // Question categories
-      const categoryQuery = `
-        SELECT category, SUM(question_count) as total 
-        FROM question_categories 
-        ${baseWhere}
-        GROUP BY category 
-        ORDER BY total DESC
-      `
-      const categoryResult = await client.query(categoryQuery, params)
-      const questionCategories = categoryResult.rows.map(row => ({
-        name: row.category,
-        value: parseInt(row.total)
-      }))
-
-      // Top subcategories
-      const subcategoryQuery = `
-        SELECT subcategory, SUM(question_count) as total 
-        FROM question_categories 
-        ${baseWhere}
-        GROUP BY subcategory 
-        ORDER BY total DESC 
-        LIMIT 10
-      `
-      const subcategoryResult = await client.query(subcategoryQuery, params)
-      const topSubcategories = subcategoryResult.rows.map(row => ({
-        name: row.subcategory,
-        value: parseInt(row.total)
-      }))
-
-      // Questions over time (daily)
-      const timeQuery = `
-        SELECT date, SUM(question_count) as total 
-        FROM question_categories 
-        ${baseWhere}
-        GROUP BY date 
-        ORDER BY date ASC
-      `
-      const timeResult = await client.query(timeQuery, params)
-      const questionsOverTime = timeResult.rows.map(row => ({
-        date: row.date.toISOString().split('T')[0],
-        questions: parseInt(row.total)
-      }))
-
-      // Real peak hours from guest_profiles.last_visit timestamps
       const peakHoursQuery = hotelId
         ? `SELECT EXTRACT(HOUR FROM last_visit)::int AS hour, COUNT(*) AS interactions
-           FROM guest_profiles WHERE hotel_id = $1 AND last_visit >= $2
+           FROM guest_profiles
+           WHERE hotel_id = $1 AND last_visit >= NOW() - $2::interval
            GROUP BY hour ORDER BY hour`
         : `SELECT EXTRACT(HOUR FROM last_visit)::int AS hour, COUNT(*) AS interactions
-           FROM guest_profiles WHERE last_visit >= $1
+           FROM guest_profiles
+           WHERE last_visit >= NOW() - $1::interval
            GROUP BY hour ORDER BY hour`
-      const peakHoursResult = await client.query(peakHoursQuery, params)
+
+      const topicsQuery = hotelId
+        ? `SELECT topic, SUM(mention_count) AS total
+           FROM popular_topics
+           WHERE hotel_id = $1
+             AND date >= CURRENT_DATE - $2::interval
+             AND topic <> ALL($3::text[])
+           GROUP BY topic
+           ORDER BY total DESC
+           LIMIT 12`
+        : `SELECT topic, SUM(mention_count) AS total
+           FROM popular_topics
+           WHERE date >= CURRENT_DATE - $1::interval
+             AND topic <> ALL($2::text[])
+           GROUP BY topic
+           ORDER BY total DESC
+           LIMIT 12`
+
+      const timeQuery = hotelId
+        ? `SELECT date, SUM(mention_count) AS total
+           FROM popular_topics
+           WHERE hotel_id = $1
+             AND date >= CURRENT_DATE - $2::interval
+             AND topic <> ALL($3::text[])
+           GROUP BY date
+           ORDER BY date ASC`
+        : `SELECT date, SUM(mention_count) AS total
+           FROM popular_topics
+           WHERE date >= CURRENT_DATE - $1::interval
+             AND topic <> ALL($2::text[])
+           GROUP BY date
+           ORDER BY date ASC`
+
+      const [peakHoursResult, topicsResult, timeResult] = await Promise.all([
+        client.query(peakHoursQuery, peakHoursParams),
+        client.query(
+          topicsQuery,
+          hotelId ? [hotelId, interval, EXCLUDED_TOPICS] : [interval, EXCLUDED_TOPICS]
+        ),
+        client.query(
+          timeQuery,
+          hotelId ? [hotelId, interval, EXCLUDED_TOPICS] : [interval, EXCLUDED_TOPICS]
+        ),
+      ])
+
       const hoursMap: Record<number, number> = {}
       for (const row of peakHoursResult.rows) {
-        hoursMap[row.hour] = parseInt(row.interactions)
+        hoursMap[row.hour] = parseInt(row.interactions, 10)
       }
       const peakHours = Array.from({ length: 24 }, (_, hour) => ({
         hour: `${hour.toString().padStart(2, '0')}:00`,
         interactions: hoursMap[hour] ?? 0,
       }))
 
-      // Popular topics
-      const topicsQuery = hotelId
-        ? `SELECT topic, SUM(mention_count) AS total FROM popular_topics
-           WHERE hotel_id = $1 AND date >= $2
-           GROUP BY topic ORDER BY total DESC LIMIT 12`
-        : `SELECT topic, SUM(mention_count) AS total FROM popular_topics
-           WHERE date >= $1
-           GROUP BY topic ORDER BY total DESC LIMIT 12`
-      const topicsResult = await client.query(topicsQuery, params)
-      const popularTopics = topicsResult.rows.map(row => ({
-        name: row.topic.replace(/_/g, ' '),
-        value: parseInt(row.total),
+      const popularTopics = aggregateTopicCounts(
+        topicsResult.rows.map((row) => ({ topic: row.topic, total: row.total })),
+        EXCLUDED_TOPICS
+      ).slice(0, 12)
+
+      const questionsOverTime = timeResult.rows.map((row) => ({
+        date: row.date.toISOString().split('T')[0],
+        questions: parseInt(row.total, 10),
       }))
 
       return NextResponse.json({
         success: true,
         data: {
-          questionCategories,
-          topSubcategories,
           questionsOverTime,
           peakHours,
           popularTopics,
-        }
+        },
       })
-
     } finally {
       client.release()
     }
-
   } catch (error: any) {
     console.error('Analytics questions error:', error)
     return NextResponse.json(

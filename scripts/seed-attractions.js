@@ -1,4 +1,4 @@
-﻿/**
+/**
  * seed-attractions.js
  *
  * Wipes all existing nearby_attractions and inserts a hand-curated set
@@ -7,14 +7,19 @@
  * Categories: cultural | nature | adventure | entertainment | shopping | restaurant | cafe
  *
  * Usage:
- *   node scripts/seed-attractions.js            # seeds all hotels
- *   node scripts/seed-attractions.js sindbad-hammamet   # seeds one hotel
+ *   DATABASE_URL=postgresql://hotel:...@localhost:5432/hotel_assistant node scripts/seed-attractions.js
+ *   npm run docker:seed
  */
-require('dotenv').config()
+try {
+  require('./load-env')
+} catch {
+  /* optional */
+}
 const { Pool } = require('pg')
+const { getPoolOptions } = require('./load-env')
 
 const TARGET_HOTEL = process.argv[2] || null
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+const pool = new Pool(getPoolOptions())
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 // c() provides default values for the logistics fields still used by the
@@ -76,21 +81,21 @@ const ATTRACTIONS = [
     attraction_name: 'Hammamet Main Beach',
     description: "A wide, golden-sand beach stretching for kilometres along the Gulf of Hammamet. The water is calm, shallow, and turquoise — ideal for swimming and paddling. Sunbeds and parasols are available for hire, and several beach bars serve fresh juices and grilled food. Particularly beautiful at sunrise when the beach is nearly empty.",
     category: 'nature', distance: '500 m', priority_order: 30,
-    ...c({ good_for_rainy: false, good_for_hot: true, activity_level: 'low', estimated_duration: 'Half day', transportation: 'Walking', price_range: 'Free (sunbeds: 5 TND)', image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/Hammamet_beach_Tunisia.jpg/800px-Hammamet_beach_Tunisia.jpg' }),
+    ...c({ good_for_rainy: false, good_for_hot: true, activity_level: 'low', estimated_duration: 'Half day', transportation: 'Walking', price_range: 'Free (sunbeds: 5 TND)', image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Hammamet_Medina.JPG/960px-Hammamet_Medina.JPG' }),
   },
   {
     hotel_id: 'sindbad-hammamet',
     attraction_name: 'Yasmine Beach Strip',
     description: "The beach in front of the Yasmine Hammamet resort complex — slightly more lively than the main beach, with beach clubs, water sports rentals, and a vibrant atmosphere. Jet ski, pedalo, and banana boat rides are easily arranged here. The seafront promenade runs parallel and is excellent for an evening stroll.",
     category: 'nature', distance: '2.0 km', priority_order: 18,
-    ...c({ good_for_rainy: false, good_for_hot: true, activity_level: 'moderate', estimated_duration: 'Half day', transportation: 'Walking / Taxi', price_range: 'Free (activities extra)', requires_booking: false }),
+    ...c({ good_for_rainy: false, good_for_hot: true, activity_level: 'moderate', estimated_duration: 'Half day', transportation: 'Walking / Taxi', price_range: 'Free (activities extra)', requires_booking: false, image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Hammamet_Kasbah.jpg/960px-Hammamet_Kasbah.jpg' }),
   },
   {
     hotel_id: 'sindbad-hammamet',
     attraction_name: 'Cap Bon Coastal Walk',
     description: "A scenic coastal walking path that winds northward along the Cap Bon peninsula, passing through pine forests, small fishing coves, and cliff viewpoints. The walk from Hammamet toward Nabeul offers spectacular views of the Mediterranean, with the scent of eucalyptus and sea breeze throughout. Best in the morning or late afternoon.",
     category: 'nature', distance: '4.0 km', priority_order: 11,
-    ...c({ good_for_rainy: false, good_for_hot: false, activity_level: 'moderate', estimated_duration: '2-3 hours', transportation: 'Taxi to starting point', price_range: 'Free' }),
+    ...c({ good_for_rainy: false, good_for_hot: false, activity_level: 'moderate', estimated_duration: '2-3 hours', transportation: 'Taxi to starting point', price_range: 'Free', image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/Kasbah_Hammamet.jpg/800px-Kasbah_Hammamet.jpg' }),
   },
   {
     hotel_id: 'sindbad-hammamet',
@@ -226,28 +231,28 @@ const ATTRACTIONS = [
     attraction_name: 'Café de la Plage — Beachfront',
     description: "A classic beach café right on the sand, shaded by palm-leaf umbrellas. Serves Tunisian mint tea poured from great heights, fresh orange juice, espresso, and simple snacks. Ideal for a morning coffee with your feet in the sand before the sun gets too intense. A laid-back favourite with a loyal local crowd.",
     category: 'cafe', distance: '400 m', priority_order: 28,
-    ...c({ good_for_rainy: false, good_for_hot: true, activity_level: 'low', estimated_duration: '30-60 min', transportation: 'Walking', price_range: '3-8 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: false }),
+    ...c({ good_for_rainy: false, good_for_hot: true, activity_level: 'low', estimated_duration: '30-60 min', transportation: 'Walking', price_range: '3-8 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: false, image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/A_small_cup_of_coffee.JPG/800px-A_small_cup_of_coffee.JPG' }),
   },
   {
     hotel_id: 'sindbad-hammamet',
     attraction_name: 'Café Sidi Bou Hadid — Historic',
     description: "Tucked into a corner of the old medina near the main gate, this atmospheric café has been serving locals for over a century. The interior is adorned with traditional blue and white tiles, antique lanterns, and framed calligraphy. Order a glass of mint tea with pine nuts — a quintessential Tunisian experience. Nargileh (hookah) available in the evenings.",
     category: 'cafe', distance: '1.3 km', priority_order: 20,
-    ...c({ good_for_rainy: true, good_for_hot: false, activity_level: 'low', estimated_duration: '30-60 min', transportation: 'Walking / Taxi', price_range: '3-8 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: true }),
+    ...c({ good_for_rainy: true, good_for_hot: false, activity_level: 'low', estimated_duration: '30-60 min', transportation: 'Walking / Taxi', price_range: '3-8 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: true, image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Mint_tea_in_Tunisia.jpg/800px-Mint_tea_in_Tunisia.jpg' }),
   },
   {
     hotel_id: 'sindbad-hammamet',
     attraction_name: 'Marina Coffee Lounge',
     description: "A modern café-lounge at Yasmine Marina with indoor and terrace seating overlooking the boats. Serves specialty coffee (Chemex, cold brew, flat white), fresh smoothies, and light bites including avocado toast and croissants. Reliable Wi-Fi and power sockets — popular with remote workers and digital nomads during the day.",
     category: 'cafe', distance: '2.3 km', priority_order: 15,
-    ...c({ good_for_rainy: true, good_for_hot: false, activity_level: 'low', estimated_duration: '30-90 min', transportation: 'Taxi', price_range: '5-15 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: true, suitable_for_business: true }),
+    ...c({ good_for_rainy: true, good_for_hot: false, activity_level: 'low', estimated_duration: '30-90 min', transportation: 'Taxi', price_range: '5-15 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: true, suitable_for_business: true, image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Coffee_with_milk_%2866385606%29.jpg/800px-Coffee_with_milk_%2866385606%29.jpg' }),
   },
   {
     hotel_id: 'sindbad-hammamet',
     attraction_name: 'Café El Hana — Traditional Courtyard',
     description: "A family-run traditional coffeehouse near the market area of central Hammamet, with tables arranged around a leafy inner courtyard. Known for its slow-poured Turkish coffee, fresh-squeezed lemon juice, and homemade makroudh pastries. A peaceful spot to escape the midday heat and watch the world drift by.",
     category: 'cafe', distance: '1.6 km', priority_order: 17,
-    ...c({ good_for_rainy: true, good_for_hot: false, activity_level: 'low', estimated_duration: '30-60 min', transportation: 'Walking / Taxi', price_range: '2-6 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: false }),
+    ...c({ good_for_rainy: true, good_for_hot: false, activity_level: 'low', estimated_duration: '30-60 min', transportation: 'Walking / Taxi', price_range: '2-6 TND', good_for_morning: true, good_for_afternoon: true, good_for_evening: false, image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Turkish_coffee_in_Tunisia.jpg/800px-Turkish_coffee_in_Tunisia.jpg' }),
   },
 
 
@@ -620,9 +625,23 @@ async function run() {
 
     const hotelIds = [...new Set(targets.map(a => a.hotel_id))]
 
+    const existing = await client.query('SELECT hotel_id FROM hotels')
+    const existingIds = new Set(existing.rows.map((r) => r.hotel_id))
+    const missing = hotelIds.filter((id) => !existingIds.has(id))
+    if (missing.length > 0) {
+      console.log(`ℹ️  Skipping unknown hotel_ids (not in hotels table): ${missing.join(', ')}`)
+    }
+    const validHotelIds = hotelIds.filter((id) => existingIds.has(id))
+    const filteredTargets = targets.filter((a) => existingIds.has(a.hotel_id))
+
+    if (filteredTargets.length === 0) {
+      console.error('No attractions to insert for hotels present in the database.')
+      process.exit(1)
+    }
+
     // ── 1. Clear existing attractions for affected hotels ────────────────
     console.log('\n🗑️  Clearing existing attractions...')
-    for (const hid of hotelIds) {
+    for (const hid of validHotelIds) {
       const del = await client.query(
         'DELETE FROM nearby_attractions WHERE hotel_id = $1', [hid]
       )
@@ -633,7 +652,7 @@ async function run() {
     console.log('\n📍 Inserting curated attractions...')
     let inserted = 0
 
-    for (const a of targets) {
+    for (const a of filteredTargets) {
       await client.query(`
         INSERT INTO nearby_attractions (
           hotel_id, attraction_name, description, category, distance,
@@ -659,8 +678,8 @@ async function run() {
     // ── 3. Summary ────────────────────────────────────────────────────────
     console.log(`\n🎉 Done! ${inserted} attractions inserted.`)
     console.log('\n📊 Breakdown:')
-    for (const hid of hotelIds) {
-      const hAttractions = targets.filter(a => a.hotel_id === hid)
+    for (const hid of validHotelIds) {
+      const hAttractions = filteredTargets.filter(a => a.hotel_id === hid)
       const byCategory = hAttractions.reduce((acc, a) => {
         acc[a.category] = (acc[a.category] || 0) + 1
         return acc
@@ -677,4 +696,8 @@ async function run() {
   }
 }
 
-run().catch(err => { console.error('Fatal:', err.message); process.exit(1) })
+module.exports = { ATTRACTIONS }
+
+if (require.main === module) {
+  run().catch(err => { console.error('Fatal:', err.message); process.exit(1) })
+}

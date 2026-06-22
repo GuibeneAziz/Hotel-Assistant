@@ -2,13 +2,11 @@
 
 import { Suspense } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import {
   LayoutDashboard,
   BarChart3,
-  Settings,
-  FilePlus,
   HelpCircle,
   Shield,
   LogOut,
@@ -16,13 +14,12 @@ import {
   User,
 } from 'lucide-react'
 
-const SETTINGS_TABS = ['amenities', 'contact'] as const
+export const ADMIN_BRAND_NAME = 'Hotel Assistant Manager'
+export const ADMIN_BRAND_TAGLINE = 'Management Suite'
 
 const TOP_CRUMBS = [
-  { href: '/', label: 'Sindbad Luxury' },
-  { href: '/dashboard', label: 'Hotels' },
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/admin/analytics', label: 'Analytics' },
-  { href: '/dashboard?tab=contact', label: 'Settings' },
 ] as const
 
 export interface AdminShellProps {
@@ -43,27 +40,19 @@ function AdminShellInner({
 }: AdminShellProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const activeTab = searchParams.get('tab')
 
   const navItems = [
     {
       href: '/dashboard',
       label: 'Dashboard',
       icon: LayoutDashboard,
-      active: pathname === '/dashboard' && (!activeTab || !SETTINGS_TABS.includes(activeTab as typeof SETTINGS_TABS[number])),
+      active: pathname === '/dashboard',
     },
     {
       href: '/admin/analytics',
       label: 'Analytics',
       icon: BarChart3,
       active: pathname.startsWith('/admin/analytics'),
-    },
-    {
-      href: '/dashboard?tab=amenities',
-      label: 'Settings',
-      icon: Settings,
-      active: pathname === '/dashboard' && SETTINGS_TABS.includes(activeTab as typeof SETTINGS_TABS[number]),
     },
   ]
 
@@ -93,8 +82,8 @@ function AdminShellInner({
               <Hotel className="h-5 w-5 text-luxury-bg" />
             </div>
             <div className="min-w-0">
-              <p className="font-serif text-sm font-semibold leading-tight text-luxury-gold">Sindbad Hotel</p>
-              <p className="text-[10px] uppercase tracking-wider text-luxury-muted">Premium Management</p>
+              <p className="font-serif text-sm font-semibold leading-tight text-luxury-gold">{ADMIN_BRAND_NAME}</p>
+              <p className="text-[10px] uppercase tracking-wider text-luxury-muted">{ADMIN_BRAND_TAGLINE}</p>
             </div>
           </Link>
 
@@ -115,14 +104,6 @@ function AdminShellInner({
           </nav>
 
           <div className="mt-auto space-y-3 pt-6">
-            <Link
-              href="/dashboard?tab=events"
-              className="btn-luxury-primary flex w-full items-center justify-center gap-2 !py-2.5 text-sm"
-            >
-              <FilePlus className="h-4 w-4" />
-              New Report
-            </Link>
-
             <div className="border-t border-white/10 pt-4">
               <a
                 href="mailto:support@sindbad-hammamet.com"
@@ -150,7 +131,7 @@ function AdminShellInner({
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-luxury-gold">
                 <Hotel className="h-4 w-4 text-luxury-bg" />
               </div>
-              <span className="font-serif text-sm font-semibold text-luxury-gold">Sindbad</span>
+              <span className="font-serif text-sm font-semibold text-luxury-gold">Assistant</span>
             </div>
 
             {/* Center breadcrumbs — desktop */}

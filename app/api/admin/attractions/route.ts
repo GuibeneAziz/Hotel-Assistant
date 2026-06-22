@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jsonwebtoken'
-import { getEnv } from '@/lib/env'
+import { getAuthEnv } from '@/lib/env'
 import pool from '@/lib/db'
 
 function verifyAdminToken(request: NextRequest): boolean {
   try {
-    const env = getEnv()
+    const env = getAuthEnv()
     const authHeader = request.headers.get('authorization')
     if (!authHeader?.startsWith('Bearer ')) return false
     const token = authHeader.substring(7)

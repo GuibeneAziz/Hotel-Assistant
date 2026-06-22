@@ -1,19 +1,45 @@
 // PostgreSQL Database Helper using pg library
 import { Pool } from 'pg'
+import { resolveDatabaseUrl, shouldUseDatabaseSsl } from './database-config'
 
-// Create a connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
+let pool: Pool | undefined
+
+/** Lazy pool — Next.js must load .env.local before the first connection. */
+export function getPool(): Pool {
+  if (pool) return pool
+
+  const databaseUrl = resolveDatabaseUrl()
+  if (process.env.NODE_ENV === 'development') {
+    try {
+      const target = new URL(databaseUrl.replace(/^postgresql:/, 'http:'))
+      console.log(
+        `🔌 PostgreSQL → ${target.username}@${target.hostname}:${target.port || '5432'}${target.pathname}`
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  pool = new Pool({
+    connectionString: databaseUrl,
+    ...(shouldUseDatabaseSsl(databaseUrl) ? { ssl: { rejectUnauthorized: false } } : {}),
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  })
+
+  return pool
+}
+
+// Proxy keeps `import pool from '@/lib/db'` working while deferring env reads.
+const poolProxy = new Proxy({} as Pool, {
+  get(_target, prop) {
+    const value = (getPool() as unknown as Record<string | symbol, unknown>)[prop]
+    return typeof value === 'function' ? (value as Function).bind(getPool()) : value
   },
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000, // Increased from 2s to 10s for NeonDB cold-start latency
 })
 
-// Export the pool for direct queries
-export default pool
+export default poolProxy
 
 // In-process cache for hotel settings — avoids hitting the DB on every chat request.
 // TTL: 5 minutes. Invalidated by hotel-settings POST via invalidateHotelSettingsCache().
@@ -33,7 +59,7 @@ export async function getAllHotelSettings() {
     return _settingsCache.data
   }
 
-  const client = await pool.connect()
+  const client = await getPool().connect()
   try {
     const hotelsResult = await client.query('SELECT hotel_id, name FROM hotels')
     if (hotelsResult.rows.length === 0) return {}
@@ -200,7 +226,7 @@ export async function createReservation(data: {
   email?: string
   notes?: string
 }) {
-  const result = await pool.query(
+  const result = await getPool().query(
     `INSERT INTO event_reservations
        (event_id, hotel_id, guest_name, phone_number, room_number, email, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -219,7 +245,7 @@ export async function createReservation(data: {
 }
 
 export async function getReservationsByHotel(hotelId: string) {
-  const result = await pool.query(
+  const result = await getPool().query(
     `SELECT r.id, r.guest_name, r.phone_number, r.room_number, r.email, r.notes,
             r.status, r.created_at,
             e.title AS event_title, e.event_date, e.event_time
@@ -233,7 +259,7 @@ export async function getReservationsByHotel(hotelId: string) {
 }
 
 export async function updateReservationStatus(id: number, status: 'pending' | 'confirmed' | 'cancelled') {
-  const result = await pool.query(
+  const result = await getPool().query(
     `UPDATE event_reservations
      SET status = $1, updated_at = NOW()
      WHERE id = $2

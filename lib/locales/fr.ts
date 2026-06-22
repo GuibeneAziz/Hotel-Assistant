@@ -108,7 +108,6 @@ const fr: Record<string, string> = {
   collectionTitle: 'La Collection',
   navHotels: 'Hôtels',
   navFeatures: 'Fonctionnalités',
-  cardCTA: 'Discuter avec l\'Assistant',
   'hotel_sindbad-hammamet_tagline': 'Escapade Balnéaire',
   'hotel_villa-didon-carthage_tagline': 'Perfection Boutique',
   'hotel_belvedere-fourati-tunis_tagline': 'Sanctuaire Urbain',

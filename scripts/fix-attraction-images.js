@@ -10,10 +10,12 @@
 require('dotenv').config()
 const { Pool } = require('pg')
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-})
+const url = process.env.DATABASE_URL || ''
+const ssl =
+  process.env.DATABASE_SSL === 'true' || /neon\.tech|sslmode=require/i.test(url)
+    ? { rejectUnauthorized: false }
+    : false
+const pool = new Pool({ connectionString: url, ssl })
 
 // ─── Verified Wikimedia Commons thumb URLs (960px wide) ─────────────────────
 const FIXES = [
@@ -28,9 +30,43 @@ const FIXES = [
     attraction_name: 'Hammamet Kasbah',
     image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Hammamet_Kasbah.jpg/960px-Hammamet_Kasbah.jpg',
   },
-  // Beach and Aqua Palace have no verified URLs — clear them so admin can add via dashboard
-  { hotel_id: 'sindbad-hammamet', attraction_name: 'Hammamet Main Beach',    image_url: null },
+  // Nature & beach — verified Commons thumbs
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Hammamet Main Beach',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Hammamet_Medina.JPG/960px-Hammamet_Medina.JPG',
+  },
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Yasmine Beach Strip',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Hammamet_Kasbah.jpg/960px-Hammamet_Kasbah.jpg',
+  },
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Cap Bon Coastal Walk',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b1/Kasbah_Hammamet.jpg/800px-Kasbah_Hammamet.jpg',
+  },
   { hotel_id: 'sindbad-hammamet', attraction_name: 'Aqua Palace Water Park', image_url: null },
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Café de la Plage — Beachfront',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/45/A_small_cup_of_coffee.JPG/800px-A_small_cup_of_coffee.JPG',
+  },
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Café Sidi Bou Hadid — Historic',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Mint_tea_in_Tunisia.jpg/800px-Mint_tea_in_Tunisia.jpg',
+  },
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Marina Coffee Lounge',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Coffee_with_milk_%2866385606%29.jpg/800px-Coffee_with_milk_%2866385606%29.jpg',
+  },
+  {
+    hotel_id: 'sindbad-hammamet',
+    attraction_name: 'Café El Hana — Traditional Courtyard',
+    image_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Turkish_coffee_in_Tunisia.jpg/800px-Turkish_coffee_in_Tunisia.jpg',
+  },
 
   // ── VILLA DIDON CARTHAGE ──────────────────────────────────────────────────
   {

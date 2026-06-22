@@ -108,7 +108,6 @@ const ar: Record<string, string> = {
   collectionTitle: 'المجموعة الفندقية',
   navHotels: 'الفنادق',
   navFeatures: 'الميزات',
-  cardCTA: 'تحدث مع المساعد',
   'hotel_sindbad-hammamet_tagline': 'هروب إلى الشاطئ',
   'hotel_villa-didon-carthage_tagline': 'الكمال البوتيك',
   'hotel_belvedere-fourati-tunis_tagline': 'الملاذ الحضري',
