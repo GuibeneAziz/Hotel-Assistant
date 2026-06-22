@@ -595,18 +595,17 @@ function buildAttractionFallbackResponse(
 // Health check endpoint
 export async function GET() {
   try {
-    const aiProvider = (process.env.AI_PROVIDER || 'groq').trim().toLowerCase()
-    const hasApiKey =
-      aiProvider === 'ollama'
-        ? !!(process.env.OLLAMA_BASE_URL || process.env.OLLAMA_MODEL)
-        : !!process.env.GROQ_API_KEY
+    const ollamaUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+    const ollamaResponse = await fetch(`${ollamaUrl}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+    })
     const hasRedis = !!process.env.REDIS_URL
     
     return NextResponse.json<ApiResponse>({
       success: true,
       data: {
         status: 'ok',
-        aiConfigured: hasApiKey,
+        aiConfigured: ollamaResponse.ok,
         redisConfigured: hasRedis,
         timestamp: new Date().toISOString()
       }

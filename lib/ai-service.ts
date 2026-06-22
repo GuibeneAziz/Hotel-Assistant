@@ -1,11 +1,5 @@
-import Groq from 'groq-sdk'
 import { getCached, setCache } from './redis'
 import crypto from 'crypto'
-
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || '',
-})
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -17,11 +11,8 @@ function generateCacheKey(
   userMessage: string,
   hotelContext: string
 ): string {
-  const provider = (process.env.AI_PROVIDER || 'groq').trim().toLowerCase()
-  const model = provider === 'ollama'
-    ? process.env.OLLAMA_MODEL || 'qwen2.5:7b'
-    : 'llama-3.3-70b-versatile'
-  const content = `${provider}:${model}:${userMessage.toLowerCase().trim()}:${hotelContext}`
+  const model = process.env.OLLAMA_MODEL || 'qwen2.5:7b'
+  const content = `ollama:${model}:${userMessage.toLowerCase().trim()}:${hotelContext}`
   return `ai:response:${crypto.createHash('md5').update(content).digest('hex')}`
 }
 
@@ -53,19 +44,6 @@ async function callOllama(messages: Message[]): Promise<string> {
   return data.message?.content || 'I apologize, I could not generate a response. Please try again.'
 }
 
-async function callGroq(messages: Message[]): Promise<string> {
-  const response = await groq.chat.completions.create({
-    messages: messages as any,
-    model: 'llama-3.3-70b-versatile',
-    temperature: 0.7,
-    max_tokens: 400,
-    top_p: 1,
-    stream: false,
-  })
-
-  return response.choices[0]?.message?.content || 'I apologize, I could not generate a response. Please try again.'
-}
-
 export async function generateResponse(
   userMessage: string,
   hotelContext: string,
@@ -83,8 +61,7 @@ export async function generateResponse(
       }
     }
 
-    const aiProvider = (process.env.AI_PROVIDER || 'groq').trim().toLowerCase()
-    console.log('AI provider:', aiProvider)
+    console.log('AI provider: ollama')
     
     const systemPrompt = `You are a helpful, friendly hotel concierge AI assistant for a luxury hotel in Tunisia.
 
@@ -192,9 +169,7 @@ Remember:
       { role: 'user', content: userMessage },
     ]
 
-    const aiResponse = aiProvider === 'ollama'
-      ? await callOllama(messages)
-      : await callGroq(messages)
+    const aiResponse = await callOllama(messages)
 
     // Cache the response (only for messages without conversation history)
     if (conversationHistory.length === 0) {
@@ -210,15 +185,6 @@ Remember:
       error: error,
     })
     
-    // Provide helpful error messages
-    if (error.message?.includes('API key') || error.status === 401) {
-      throw new Error('Invalid API key. Please check your Groq API key in .env')
-    }
-    
-    if (error.status === 429) {
-      throw new Error('Rate limit exceeded. Please try again in a moment.')
-    }
-    
     throw new Error(`AI Error: ${error.message || 'Unknown error occurred'}`)
   }
 }
@@ -226,15 +192,9 @@ Remember:
 // Health check function
 export async function checkAIService(): Promise<boolean> {
   try {
-    if (process.env.AI_PROVIDER === 'ollama') {
-      return true
-    }
-
-    if (!process.env.GROQ_API_KEY) {
-      console.error('GROQ_API_KEY not configured')
-      return false
-    }
-    return true
+    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+    const response = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) })
+    return response.ok
   } catch (error) {
     console.error('AI Service health check failed:', error)
     return false

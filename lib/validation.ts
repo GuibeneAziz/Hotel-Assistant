@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import DOMPurify from 'isomorphic-dompurify'
 
 // OWASP: Input Sanitization Functions
 
@@ -11,9 +10,19 @@ import DOMPurify from 'isomorphic-dompurify'
  */
 export function sanitizeHtml(input: string): string {
   if (!input) return ''
-  
-  // Strip all HTML tags
-  return DOMPurify.sanitize(input, { ALLOWED_TAGS: [] })
+
+  let output = ''
+  let insideTag = false
+  for (const character of input) {
+    if (character === '<') {
+      insideTag = true
+    } else if (character === '>') {
+      insideTag = false
+    } else if (!insideTag) {
+      output += character
+    }
+  }
+  return output
 }
 
 /**

@@ -474,7 +474,12 @@ function AdminDashboardPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', body: formData })
+      const token = getAdminToken()
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
       const result = await res.json()
       if (result.success) {
         setNewEvent(prev => ({ ...prev, imageUrl: result.url }))

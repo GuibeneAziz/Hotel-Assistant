@@ -6,7 +6,6 @@ import path from 'path'
 import { parse as parseDotenv } from 'dotenv'
 
 interface EnvConfig {
-  GROQ_API_KEY: string
   REDIS_URL: string
   NODE_ENV: string
   JWT_SECRET: string
@@ -140,21 +139,11 @@ export function validateEnv(): EnvConfig {
   const errors: string[] = []
   const warnings: string[] = []
 
-  // Check required API keys
-  if (!process.env.GROQ_API_KEY) {
-    errors.push('GROQ_API_KEY is missing')
-  }
-
   if (!process.env.REDIS_URL) {
     errors.push('REDIS_URL is missing')
   }
 
   const authEnv = validateAuthEnv()
-
-  // Validate format of API keys
-  if (process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.startsWith('gsk_')) {
-    warnings.push('GROQ_API_KEY appears to be invalid (should start with "gsk_")')
-  }
 
   if (process.env.REDIS_URL && !process.env.REDIS_URL.startsWith('redis://')) {
     warnings.push('REDIS_URL appears to be invalid (should start with "redis://")')
@@ -177,7 +166,6 @@ export function validateEnv(): EnvConfig {
   console.log('✅ Environment variables validated successfully')
 
   return {
-    GROQ_API_KEY: process.env.GROQ_API_KEY!,
     REDIS_URL: process.env.REDIS_URL!,
     ...authEnv
   }

@@ -55,7 +55,7 @@ function runningInsideDocker(): boolean {
   return (
     process.env.DOCKER === 'true' ||
     process.env.RUNNING_IN_DOCKER === 'true' ||
-    normalizeEnvValue(process.env.HOSTNAME)?.includes('hotel-assistant')
+    (normalizeEnvValue(process.env.HOSTNAME)?.includes('hotel-assistant') ?? false)
   )
 }
 
