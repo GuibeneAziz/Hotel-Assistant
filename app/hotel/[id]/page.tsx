@@ -610,6 +610,7 @@ export default function HotelAssistant() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(50000),
         body: JSON.stringify({
           message: messageText,
           hotelData: hotelInfo,

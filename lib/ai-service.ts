@@ -11,15 +11,17 @@ function generateCacheKey(
   userMessage: string,
   hotelContext: string
 ): string {
-  const model = process.env.OLLAMA_MODEL || 'qwen2.5:7b'
+  const model = process.env.OLLAMA_MODEL || 'qwen2.5:0.5b'
   const content = `ollama:${model}:${userMessage.toLowerCase().trim()}:${hotelContext}`
   return `ai:response:${crypto.createHash('md5').update(content).digest('hex')}`
 }
 
 async function callOllama(messages: Message[]): Promise<string> {
   const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-  const model = process.env.OLLAMA_MODEL || 'qwen2.5:7b'
-  const numCtx = Number(process.env.OLLAMA_NUM_CTX || 8192)
+  const model = process.env.OLLAMA_MODEL || 'qwen2.5:0.5b'
+  const numCtx = Number(process.env.OLLAMA_NUM_CTX || 4096)
+  const numPredict = Number(process.env.OLLAMA_NUM_PREDICT || 160)
+  const timeoutMs = Number(process.env.OLLAMA_REQUEST_TIMEOUT_MS || 45000)
 
   const response = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
@@ -28,11 +30,16 @@ async function callOllama(messages: Message[]): Promise<string> {
       model,
       messages,
       stream: false,
+      keep_alive: '2m',
       options: {
         temperature: 0.4,
         num_ctx: numCtx,
+        num_predict: numPredict,
+        num_batch: 64,
+        num_gpu: 0,
       },
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   if (!response.ok) {

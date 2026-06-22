@@ -20,7 +20,7 @@ An AI-powered hotel concierge system built for Tunisian hotels, using Retrieval-
 | **UI Animations** | Framer Motion | Smooth transitions |
 | **Charts** | Recharts | Analytics dashboard charts |
 | **Backend** | Next.js API Routes (Node.js) | Server-side logic |
-| **LLM** | Qwen 2.5 via Ollama | Natural language generation |
+| **LLM** | Qwen 2.5 0.5B via Ollama | Low-memory CPU inference |
 | **Database** | PostgreSQL (NeonDB) | All persistent data |
 | **DB Client** | `pg` (node-postgres) | PostgreSQL queries |
 | **Caching** | Redis (Upstash) + in-process cache | Response & settings cache |
@@ -140,7 +140,7 @@ JWT_SECRET=...                        # Random secret for admin JWT
 ADMIN_PASSWORD_HASH=...               # bcrypt hash — node scripts/hash-password.js
 AI_PROVIDER=ollama
 OLLAMA_BASE_URL=http://ollama:11434   # Docker service URL
-OLLAMA_MODEL=qwen2.5:7b               # Pulled automatically by Compose
+OLLAMA_MODEL=qwen2.5:0.5b             # Pulled automatically; CPU/VPS friendly
 ```
 
 ### 3. Set up the database

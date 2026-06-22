@@ -73,8 +73,10 @@ services:
       DATABASE_SSL: "false"
       AI_PROVIDER: ollama
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
-      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-8192}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-4096}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-160}
+      OLLAMA_REQUEST_TIMEOUT_MS: ${OLLAMA_REQUEST_TIMEOUT_MS:-45000}
       NODE_ENV: production
       PORT: 3001
       HOSTNAME: 0.0.0.0
@@ -89,7 +91,7 @@ services:
         condition: service_started
       seed:
         condition: service_completed_successfully
-      ollama-pull:
+      ollama-warmup:
         condition: service_completed_successfully
     networks:
       - internal
@@ -119,6 +121,11 @@ services:
     image: ollama/ollama:latest
     container_name: hotel-assistant-ollama
     restart: unless-stopped
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: "2m"
+      OLLAMA_FLASH_ATTENTION: "1"
     volumes:
       - ollama_data:/root/.ollama
     networks:
@@ -135,12 +142,27 @@ services:
     restart: "no"
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull \"$$OLLAMA_MODEL\""]
+    command: ["ollama rm qwen2.5:3b >/dev/null 2>&1 || true; ollama rm qwen2.5:7b >/dev/null 2>&1 || true; ollama pull \"$$OLLAMA_MODEL\""]
     depends_on:
       ollama:
         condition: service_healthy
+    networks:
+      - internal
+
+  ollama-warmup:
+    image: ollama/ollama:latest
+    container_name: hotel-assistant-ollama-warmup
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama run \"$$OLLAMA_MODEL\" \"Reply with OK.\""]
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
     networks:
       - internal
 

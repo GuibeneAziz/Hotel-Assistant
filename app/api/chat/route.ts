@@ -148,8 +148,8 @@ export async function POST(request: Request) {
     const relevantContext = extractRelevantContext(message, fullKnowledge)
     console.log('🎯 Relevant context extracted, length:', relevantContext.length)
     const rawContextForModel = relevantContext.trim().length >= 250 ? relevantContext : fullKnowledge
-    const contextForModel = rawContextForModel.length > 12000
-      ? rawContextForModel.slice(0, 12000)
+    const contextForModel = rawContextForModel.length > 6000
+      ? rawContextForModel.slice(0, 6000)
       : rawContextForModel
     console.log('🛡️ Context sent to model, length:', contextForModel.length)
 
@@ -261,9 +261,13 @@ export async function POST(request: Request) {
       name: error.name
     })
     
+    const isTimeout = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+
     // OWASP: Sanitize error messages - don't expose internal details
     const isProduction = process.env.NODE_ENV === 'production'
-    const errorMessage = isProduction 
+    const errorMessage = isTimeout
+      ? 'The local AI model took too long to respond'
+      : isProduction
       ? 'An error occurred processing your request'
       : error.message || 'Failed to generate response'
     
@@ -271,9 +275,11 @@ export async function POST(request: Request) {
       { 
         success: false,
         error: errorMessage,
-        response: `I apologize, but I encountered an error. Please try again.`
+        response: isTimeout
+          ? 'The assistant is busy and took too long to respond. Please try a shorter question.'
+          : 'I apologize, but I encountered an error. Please try again.'
       },
-      { status: 500 }
+      { status: isTimeout ? 504 : 500 }
     )
   }
 }
