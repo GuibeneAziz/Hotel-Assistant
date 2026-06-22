@@ -102,7 +102,7 @@ services:
       start_period: 60s
     labels:
       - traefik.enable=true
-      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.docker.network=${TRAEFIK_NETWORK:-screenflow-public}
       - "traefik.http.routers.hotel-chatbot.rule=Host(`${TRAEFIK_FRONT_HOST:-chatbot.survey-flow.com}`)"
       - traefik.http.routers.hotel-chatbot.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
       - traefik.http.routers.hotel-chatbot.tls=true
@@ -150,7 +150,7 @@ networks:
     driver: bridge
   traefik:
     external: true
-    name: ${TRAEFIK_NETWORK:-traefik}
+    name: ${TRAEFIK_NETWORK:-screenflow-public}
 
 volumes:
   postgres_data:
