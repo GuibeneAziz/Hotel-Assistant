@@ -1,16 +1,14 @@
 /**
- * Load .env files in Next.js order and normalize DATABASE_URL for host scripts.
+ * Load the single .env file for Node scripts (same source as the Next.js app).
  */
 const path = require('path')
 const { existsSync, readFileSync } = require('fs')
 const { parse } = require('dotenv')
 
 const root = path.join(__dirname, '..')
-const merged = {}
-for (const fileName of ['.env', '.env.local', '.env.development', '.env.development.local']) {
-  const filePath = path.join(root, fileName)
-  if (existsSync(filePath)) Object.assign(merged, parse(readFileSync(filePath)))
-}
+const envPath = path.join(root, '.env')
+
+const merged = existsSync(envPath) ? parse(readFileSync(envPath)) : {}
 
 for (const [key, value] of Object.entries(merged)) {
   if (process.env[key] === undefined) process.env[key] = value
@@ -23,7 +21,9 @@ function buildUrlFromParts() {
   const password = merged.POSTGRES_PASSWORD
   const db = merged.POSTGRES_DB
   if (!user || !password || !db) return null
-  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@localhost:${DEFAULT_DOCKER_PORT}/${db}`
+  const host = merged.POSTGRES_HOST || 'localhost'
+  const port = host === 'postgres' ? '5432' : DEFAULT_DOCKER_PORT
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`
 }
 
 let url = (merged.DATABASE_URL || '').trim() || buildUrlFromParts() || ''
@@ -35,7 +35,7 @@ if (url) process.env.DATABASE_URL = url
 function getPoolOptions() {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) {
-    throw new Error('DATABASE_URL is missing — run npm run db:use-neon or npm run db:use-docker')
+    throw new Error('DATABASE_URL is missing — copy .env.example to .env and configure the database section')
   }
   const ssl =
     merged.DATABASE_SSL === 'true' ||
@@ -45,4 +45,4 @@ function getPoolOptions() {
   return { connectionString, ssl }
 }
 
-module.exports = { getPoolOptions }
+module.exports = { getPoolOptions, merged }

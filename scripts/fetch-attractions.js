@@ -27,9 +27,8 @@
  *       latitude/longitude columns exist in nearby_attractions.
  */
 
-const path = require('path')
-require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') })
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') })
+require('./load-env')
+const { getPoolOptions } = require('./load-env')
 const { Pool } = require('pg')
 
 const HOTEL_ID  = process.argv[2]
@@ -42,7 +41,7 @@ if (!HOTEL_ID) {
   process.exit(1)
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+const pool = new Pool(getPoolOptions())
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 

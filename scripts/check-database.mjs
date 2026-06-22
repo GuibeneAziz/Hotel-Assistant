@@ -10,22 +10,21 @@ import pg from 'pg'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-function getMergedEnv() {
-  const merged = {}
-  for (const fileName of ['.env', '.env.local', '.env.development', '.env.development.local']) {
-    const filePath = path.join(root, fileName)
-    if (existsSync(filePath)) Object.assign(merged, parseDotenv(readFileSync(filePath)))
-  }
-  return merged
+function getEnv() {
+  const filePath = path.join(root, '.env')
+  return existsSync(filePath) ? parseDotenv(readFileSync(filePath)) : {}
 }
 
 function resolveDatabaseUrl(merged) {
   let url = (merged.DATABASE_URL || '').trim()
   if (!url && merged.POSTGRES_USER && merged.POSTGRES_PASSWORD && merged.POSTGRES_DB) {
-    const port = merged.POSTGRES_PORT || '5433'
-    url = `postgresql://${encodeURIComponent(merged.POSTGRES_USER)}:${encodeURIComponent(merged.POSTGRES_PASSWORD)}@localhost:${port}/${merged.POSTGRES_DB}`
+    const host = merged.POSTGRES_HOST || 'localhost'
+    const port = merged.POSTGRES_PORT || (host === 'postgres' ? '5432' : '5433')
+    url = `postgresql://${encodeURIComponent(merged.POSTGRES_USER)}:${encodeURIComponent(merged.POSTGRES_PASSWORD)}@${host}:${port}/${merged.POSTGRES_DB}`
   }
-  if (!url) throw new Error('DATABASE_URL missing — set in .env (Neon) or run npm run db:use-docker')
+  if (!url) {
+    throw new Error('DATABASE_URL missing — copy .env.example to .env and configure the database section')
+  }
   if (url.includes('@postgres:')) {
     const port = merged.POSTGRES_PORT || '5433'
     url = url.replace('@postgres:', `@localhost:${port}:`)
@@ -33,7 +32,7 @@ function resolveDatabaseUrl(merged) {
   return url
 }
 
-const merged = getMergedEnv()
+const merged = getEnv()
 const url = resolveDatabaseUrl(merged)
 const target = new URL(url.replace(/^postgresql:/, 'http:'))
 const provider = /neon\.tech/i.test(target.hostname)
@@ -79,7 +78,7 @@ try {
   }
 
   if (target.hostname === 'localhost' && (target.port || '5432') === '5432') {
-    console.warn('\n⚠️  Port 5432 on Windows is often NOT Docker. Run: npm run db:use-docker')
+    console.warn('\n⚠️  Port 5432 on Windows is often NOT Docker. Set POSTGRES_PORT=5433 in .env')
     process.exit(1)
   }
 
@@ -87,7 +86,7 @@ try {
 } catch (error) {
   console.error(`\n❌ Connection failed: ${error.message}`)
   if (error.code === '28P01') {
-    console.error('   → Run npm run db:use-neon (Neon) or npm run db:use-docker (local Docker)')
+    console.error('   → Check DATABASE_URL and POSTGRES_* credentials in .env (see .env.example)')
   }
   process.exit(1)
 } finally {

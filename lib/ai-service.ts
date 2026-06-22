@@ -212,7 +212,7 @@ Remember:
     
     // Provide helpful error messages
     if (error.message?.includes('API key') || error.status === 401) {
-      throw new Error('Invalid API key. Please check your Groq API key in .env.local')
+      throw new Error('Invalid API key. Please check your Groq API key in .env')
     }
     
     if (error.status === 429) {

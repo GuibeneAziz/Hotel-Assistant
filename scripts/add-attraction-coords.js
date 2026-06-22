@@ -1,12 +1,8 @@
-const path = require('path')
-require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') })
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') })
+require('./load-env')
+const { getPoolOptions } = require('./load-env')
 const { Pool } = require('pg')
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-})
+const pool = new Pool(getPoolOptions())
 
 async function run() {
   const client = await pool.connect()

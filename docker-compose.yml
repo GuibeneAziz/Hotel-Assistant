@@ -1,7 +1,7 @@
 # Production-oriented stack for VPS behind an existing Traefik reverse proxy.
 #
 # Usage:
-#   cp .env.docker.example .env
+#   cp .env.example .env
 #   docker compose up --build -d
 #
 # Local port publishing: copy docker-compose.local.yml → docker-compose.override.yml

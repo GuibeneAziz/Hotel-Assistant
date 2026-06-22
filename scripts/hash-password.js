@@ -51,13 +51,13 @@ async function main() {
     const hash = await bcrypt.hash(password, SALT_ROUNDS)
     
     console.log('\n✅ Password hash generated successfully!')
-    console.log('\n📋 Add this to your .env.local file:')
+    console.log('\n📋 Add this to your .env file:')
     console.log('─'.repeat(60))
     console.log(`ADMIN_PASSWORD_HASH=${hash}`)
     console.log('─'.repeat(60))
     console.log('\n⚠️  IMPORTANT:')
     console.log('   - Keep this hash secure')
-    console.log('   - Never commit .env.local to version control')
+    console.log('   - Never commit .env to version control')
     console.log('   - Use different passwords for different environments')
     console.log('\n✅ Done!')
   } catch (error) {

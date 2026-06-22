@@ -4,11 +4,8 @@
 const { Client } = require('pg')
 const { writeFileSync } = require('fs')
 const { join } = require('path')
-require('dotenv').config({ path: '.env.local' })
-
-const client = new Client({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+require('./load-env')
+const { getPoolOptions } = require('./load-env')
 })
 
 async function backup() {

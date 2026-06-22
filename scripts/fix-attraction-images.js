@@ -7,15 +7,10 @@
  *
  * All URLs below were verified by fetching the actual Commons file page.
  */
-require('dotenv').config()
+const { getPoolOptions } = require('./load-env')
 const { Pool } = require('pg')
 
-const url = process.env.DATABASE_URL || ''
-const ssl =
-  process.env.DATABASE_SSL === 'true' || /neon\.tech|sslmode=require/i.test(url)
-    ? { rejectUnauthorized: false }
-    : false
-const pool = new Pool({ connectionString: url, ssl })
+const pool = new Pool(getPoolOptions())
 
 // ─── Verified Wikimedia Commons thumb URLs (960px wide) ─────────────────────
 const FIXES = [

@@ -19,9 +19,7 @@
     "docker:verify": "node scripts/verify-docker.mjs",
     "fix:images": "node scripts/fix-attraction-images.js",
     "db:check": "node scripts/check-database.mjs",
-    "db:use-neon": "node scripts/db-use-neon.mjs",
-    "db:use-docker": "node scripts/db-use-docker.mjs",
-    "db:sync-env": "node scripts/db-use-docker.mjs",
+    "env:init": "node scripts/init-env.mjs",
     "db:seed": "node scripts/seed-hotel-settings.js && node scripts/seed-attractions.js",
     "db:seed-all": "npm run db:seed"
   },

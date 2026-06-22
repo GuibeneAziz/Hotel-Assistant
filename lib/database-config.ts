@@ -1,8 +1,7 @@
 /**
  * Single source of truth for PostgreSQL connection settings.
  *
- * Reads .env files in the same order as Next.js (.env.local wins) so scripts and
- * the app always target the same database.
+ * Reads `.env` so scripts and the app always target the same database.
  *
  * Windows note: Docker Postgres is mapped to port 5433 by default to avoid
  * conflicting with a local PostgreSQL service on 5432.
@@ -29,20 +28,14 @@ function normalizeEnvValue(value?: string): string | undefined {
   return trimmed
 }
 
-/** Merge .env* files the same way Next.js does for local development. */
+/** Load variables from the single `.env` file at the project root. */
 function getMergedEnvFiles(): Record<string, string> {
   const isProd = process.env.NODE_ENV === 'production'
   if (isProd && mergedEnvCache) return mergedEnvCache
 
-  const merged: Record<string, string> = {}
   const root = process.cwd()
-  const files = ['.env', '.env.local', '.env.development', '.env.development.local']
-
-  for (const fileName of files) {
-    const filePath = path.join(root, fileName)
-    if (!existsSync(filePath)) continue
-    Object.assign(merged, parseDotenv(readFileSync(filePath)))
-  }
+  const filePath = path.join(root, '.env')
+  const merged = existsSync(filePath) ? parseDotenv(readFileSync(filePath)) : {}
 
   if (isProd) mergedEnvCache = merged
   return merged
@@ -51,7 +44,7 @@ function getMergedEnvFiles(): Record<string, string> {
 function envValue(key: string): string | undefined {
   const fromFiles = normalizeEnvValue(getMergedEnvFiles()[key])
   const fromProcess = normalizeEnvValue(process.env[key])
-  // Next.js can keep a stale process.env.DATABASE_URL on Windows after .env.local changes.
+  // Prefer file values for DB settings so edits to .env apply without a stale process.env.
   if (key === 'DATABASE_URL' || key.startsWith('POSTGRES_') || key === 'DATABASE_SSL') {
     return fromFiles || fromProcess
   }
@@ -87,7 +80,7 @@ export function resolveDatabaseUrl(): string {
 
   if (!url) {
     throw new Error(
-      'DATABASE_URL is missing. Set it in .env (Neon) or run `npm run db:use-docker` for local Docker Postgres.'
+      'DATABASE_URL is missing. Copy `.env.example` to `.env` and configure the database section.'
     )
   }
 
@@ -169,14 +162,14 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
     }
   } catch (error: any) {
     let hint =
-      'Run `npm run db:check`. For Neon, set DATABASE_URL in `.env`. For Docker, run `npm run db:use-docker`.'
+      'Run `npm run db:check` and set DATABASE_URL in `.env` (see `.env.example`).'
 
     if (error?.code === '28P01') {
       hint =
-        'Authentication failed. If using Docker on Windows, run `npm run db:use-docker`. For Neon, copy a fresh connection string from the Neon dashboard into `.env`.'
+        'Authentication failed. For Docker on Windows use port 5433 in `.env`. For Neon, copy a fresh connection string from the Neon dashboard.'
     } else if (target.port === '5432' && target.provider === 'docker-local') {
       hint =
-        'Port 5432 on Windows is often a different PostgreSQL install. Run `npm run db:use-docker` to switch to Docker on port 5433.'
+        'Port 5432 on Windows is often a different PostgreSQL install. Set POSTGRES_PORT=5433 and DATABASE_URL to localhost:5433 in `.env`.'
     }
 
     return {

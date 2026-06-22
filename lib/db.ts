@@ -4,7 +4,7 @@ import { resolveDatabaseUrl, shouldUseDatabaseSsl } from './database-config'
 
 let pool: Pool | undefined
 
-/** Lazy pool — Next.js must load .env.local before the first connection. */
+/** Lazy pool — reads DATABASE_URL from `.env`. */
 export function getPool(): Pool {
   if (pool) return pool
 

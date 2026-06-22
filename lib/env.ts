@@ -37,7 +37,7 @@ function getRawEnvFileValues(): Record<string, string> {
 
   const mergedValues: Record<string, string> = {}
 
-  for (const fileName of ['.env', '.env.local']) {
+  for (const fileName of ['.env']) {
     const filePath = path.join(process.cwd(), fileName)
 
     if (!existsSync(filePath)) {
@@ -124,7 +124,7 @@ export function validateAuthEnv(): AuthEnvConfig {
   if (errors.length > 0) {
     console.error('❌ Auth environment validation failed:')
     errors.forEach(error => console.error(`   - ${error}`))
-    console.error('\n💡 See .env.local.example for required variables')
+    console.error('\n💡 See .env.example for required variables')
     throw new Error(`Auth environment validation failed: ${errors.join(', ')}`)
   }
 
@@ -170,7 +170,7 @@ export function validateEnv(): EnvConfig {
   if (errors.length > 0) {
     console.error('❌ Environment validation failed:')
     errors.forEach(error => console.error(`   - ${error}`))
-    console.error('\n💡 See .env.local.example for required variables')
+    console.error('\n💡 See .env.example for required variables')
     throw new Error(`Environment validation failed: ${errors.join(', ')}`)
   }
 

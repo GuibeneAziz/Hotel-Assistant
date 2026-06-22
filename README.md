@@ -125,15 +125,22 @@ npm install
 
 ### 2. Configure environment variables
 
-Copy `.env.local.example` to `.env.local` and fill in:
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+npm run env:init
+```
+
+All configuration lives in **one file** (`.env`). See `.env.example` for every variable, grouped by section (database, Redis, admin, AI, Traefik).
 
 ```env
-DATABASE_URL=postgresql://...         # NeonDB connection string
-GROQ_API_KEY=gsk_...                  # Groq AI API key
-REDIS_URL=redis://...                 # Upstash Redis URL (optional)
+DATABASE_URL=postgresql://...         # Neon or local Docker (port 5433 on Windows)
+REDIS_URL=redis://localhost:6379
 JWT_SECRET=...                        # Random secret for admin JWT
-ADMIN_PASSWORD_HASH=...               # bcrypt hash of admin password
-OPENTRIPMAP_API_KEY=...               # Optional, for attraction fetching
+ADMIN_PASSWORD_HASH=...               # bcrypt hash — node scripts/hash-password.js
+AI_PROVIDER=ollama                    # ollama | groq
+OLLAMA_BASE_URL=http://localhost:11434
+# GROQ_API_KEY=gsk_...                # if AI_PROVIDER=groq
 ```
 
 ### 3. Set up the database

@@ -100,7 +100,7 @@ export async function generatePasswordHash(password: string): Promise<void> {
   
   const hash = await hashPassword(password)
   console.log('\n✅ Password hash generated successfully!')
-  console.log('\nAdd this to your .env.local file:')
+  console.log('\nAdd this to your .env file:')
   console.log(`ADMIN_PASSWORD_HASH=${hash}`)
   console.log('\n⚠️  Keep this hash secure and never commit it to version control!')
 }

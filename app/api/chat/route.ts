@@ -75,7 +75,7 @@ export async function POST(request: Request) {
           success: false,
           error: 'Database unavailable',
           response:
-            'I cannot reach the hotel database right now. Run `npm run db:check` on the server, fix DATABASE_URL in .env.local, then restart the app.',
+            'I cannot reach the hotel database right now. Run `npm run db:check` on the server, fix DATABASE_URL in .env, then restart the app.',
         },
         { status: 503 }
       )
